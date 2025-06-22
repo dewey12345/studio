@@ -14,36 +14,32 @@ import { useToast } from '@/hooks/use-toast';
 import { authService } from '@/lib/auth';
 import { Palette } from 'lucide-react';
 
-const loginSchema = z.object({
+const registerSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
-  password: z.string().min(1, { message: 'Password is required.' }),
+  password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
 });
 
-type LoginFormValues = z.infer<typeof loginSchema>;
+type RegisterFormValues = z.infer<typeof registerSchema>;
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const form = useForm<LoginFormValues>({
-    resolver: zodResolver(loginSchema),
+  const form = useForm<RegisterFormValues>({
+    resolver: zodResolver(registerSchema),
     defaultValues: {
       email: '',
       password: '',
     },
   });
 
-  const onSubmit = (data: LoginFormValues) => {
+  const onSubmit = (data: RegisterFormValues) => {
     try {
-      const user = authService.login(data.email, data.password);
-      toast({ title: 'Success', description: 'Logged in successfully.' });
-      if (user.role === 'admin') {
-        router.push('/admin');
-      } else {
-        router.push('/dashboard');
-      }
+      authService.register(data.email, data.password);
+      toast({ title: 'Success', description: 'Account created successfully. Please log in.' });
+      router.push('/');
     } catch (error: any) {
       toast({
-        title: 'Login Failed',
+        title: 'Registration Failed',
         description: error.message,
         variant: 'destructive',
       });
@@ -56,9 +52,9 @@ export default function LoginPage() {
         <CardHeader className="text-center">
             <div className="flex justify-center items-center gap-2 mb-2">
                 <Palette className="h-8 w-8 text-primary" />
-                <CardTitle className="text-3xl">Color Clash</CardTitle>
+                <CardTitle className="text-3xl">Create Account</CardTitle>
             </div>
-          <CardDescription>Enter your credentials to access your account</CardDescription>
+          <CardDescription>Enter your email and password to create an account</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -90,14 +86,14 @@ export default function LoginPage() {
                 )}
               />
               <Button type="submit" className="w-full">
-                Sign In
+                Sign Up
               </Button>
             </form>
           </Form>
           <div className="mt-4 text-center text-sm">
-            Don&apos;t have an account?{' '}
-            <Link href="/register" className="underline">
-              Sign up
+            Already have an account?{' '}
+            <Link href="/" className="underline">
+              Sign in
             </Link>
           </div>
         </CardContent>
