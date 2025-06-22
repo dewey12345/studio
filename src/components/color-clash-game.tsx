@@ -13,14 +13,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { History, Palette, Redo, Shield, User, Wallet } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const ROUND_DURATION = 30;
 const POST_ROUND_DELAY = 5;
 
-const COLOR_CONFIG = {
-  Red: { odds: 2, className: 'bg-red-500 hover:bg-red-600', display: 'Red' },
-  Green: { odds: 2, className: 'bg-green-500 hover:bg-green-600', display: 'Green' },
-  Violet: { odds: 10, className: 'bg-violet-500 hover:bg-violet-600', display: 'Violet' },
+const COLOR_CONFIG: Record<Color, { odds: number; className: string; textColor: string; borderColor: string; display: string }> = {
+  Red: { odds: 2, className: 'bg-red-500 hover:bg-red-600', textColor: 'text-red-500', borderColor: 'border-red-500', display: 'Red' },
+  Green: { odds: 2, className: 'bg-green-500 hover:bg-green-600', textColor: 'text-green-500', borderColor: 'border-green-500', display: 'Green' },
+  Violet: { odds: 10, className: 'bg-violet-500 hover:bg-violet-600', textColor: 'text-violet-500', borderColor: 'border-violet-500', display: 'Violet' },
 };
 
 export function ColorClashGame() {
@@ -150,7 +151,7 @@ export function ColorClashGame() {
           const userBetsOnRound = result.bets.map(b => `${b.amount} on ${b.color}`).join(', ');
           const userPayoutOnRound = result.winningBets.reduce((acc, bet) => acc + (bet.payout || 0), 0);
           return (
-            <TableRow key={index} className={result.winningColor ? `border-l-4 border-${COLOR_CONFIG[result.winningColor].className.split(' ')[0].replace('bg-','').replace('-500','')}-500` : ''}>
+            <TableRow key={index} className={cn("border-l-4", result.winningColor && COLOR_CONFIG[result.winningColor].borderColor)}>
               <TableCell>{betHistory.length - index}</TableCell>
               <TableCell>
                 <span className={`px-2 py-1 rounded-full text-white text-xs ${COLOR_CONFIG[result.winningColor].className}`}>
@@ -322,7 +323,7 @@ export function ColorClashGame() {
           <AlertDialogHeader>
             <AlertDialogTitle>Round Over!</AlertDialogTitle>
             <AlertDialogDescription>
-              The winning color is <span className={`font-bold text-lg text-${COLOR_CONFIG[roundResult?.winningColor || 'Red'].className.split(' ')[0].replace('bg-','').replace('-500','')}-500`}>{roundResult?.winningColor}</span>.
+              The winning color is <span className={cn("font-bold text-lg", roundResult && COLOR_CONFIG[roundResult.winningColor].textColor)}>{roundResult?.winningColor}</span>.
               {roundResult && roundResult.totalPayout > 0 ? 
                 ` You won $${roundResult.totalPayout.toFixed(2)}!`
                 : " Better luck next time!"}
