@@ -126,11 +126,12 @@ export const authService = {
       throw new Error("Email is already in use by another account.");
     }
     
-    // Create the updated user object, keeping the old password if a new one isn't provided
+    // The user edit dialog ensures that `data.password` is either a valid new password
+    // or the property is deleted entirely if the field was empty.
+    // A simple spread merge is sufficient and robust.
     const updatedUser = { 
       ...users[userIndex], 
       ...data,
-      password: data.password || users[userIndex].password,
     };
 
     users[userIndex] = updatedUser;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -36,13 +36,20 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
   
   const { toast } = useToast();
 
-  const loadUsers = () => {
+  const loadUsers = useCallback(() => {
     setUsers(authService.getUsers());
-  };
+  }, []);
 
   useEffect(() => {
     loadUsers();
-  }, []);
+    // Listen for changes in localStorage from other tabs/windows
+    // This ensures the user list is always up-to-date.
+    window.addEventListener('storage', loadUsers);
+    
+    return () => {
+        window.removeEventListener('storage', loadUsers);
+    };
+  }, [loadUsers]);
 
   const form = useForm<UpdateFormValues>({
     resolver: zodResolver(updateSchema),
