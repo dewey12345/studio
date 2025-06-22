@@ -33,7 +33,7 @@ interface ColorClashGameProps {
 export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
   const [timer, setTimer] = useState(ROUND_DURATION);
   const [isRoundInProgress, setIsRoundInProgress] = useState(true);
-  const [balance, setBalance] = useState(user.balance);
+  const [balance, setBalance] = useState(user.balance ?? 0);
   const [betAmount, setBetAmount] = useState('10');
   const [currentBets, setCurrentBets] = useState<Bet[]>([]);
   const [betHistory, setBetHistory] = useState<RoundResult[]>([]);
@@ -45,7 +45,7 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
   const isAdmin = user.role === 'admin';
 
   useEffect(() => {
-    setBalance(user.balance);
+    setBalance(user.balance ?? 0);
   }, [user.balance]);
 
   const totals = useMemo<Totals>(() => {
@@ -145,7 +145,7 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
       toast({ title: "Invalid Bet", description: "Please enter a positive number.", variant: "destructive" });
       return;
     }
-    if (amount > balance) {
+    if (amount > (balance ?? 0)) {
       toast({ title: "Insufficient Funds", description: "You do not have enough balance to place this bet.", variant: "destructive" });
       return;
     }
@@ -153,7 +153,7 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
       toast({ title: "Round Over", description: "Please wait for the next round to start.", variant: "destructive" });
       return;
     }
-    const newBalance = balance - amount;
+    const newBalance = (balance ?? 0) - amount;
     setBalance(newBalance);
     setCurrentBets(prev => [...prev, { color, amount }]);
     try {
@@ -214,7 +214,7 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="p-3 pt-0">
-            <div className="text-2xl font-bold font-mono">${balance.toFixed(2)}</div>
+            <div className="text-2xl font-bold font-mono">${(balance ?? 0).toFixed(2)}</div>
           </CardContent>
         </Card>
       </header>
@@ -243,7 +243,7 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
                   className="text-center text-lg"
                   disabled={!isRoundInProgress}
                 />
-                <Button onClick={() => setBetAmount(balance.toFixed(2))} variant="outline" disabled={!isRoundInProgress}>
+                <Button onClick={() => setBetAmount((balance ?? 0).toFixed(2))} variant="outline" disabled={!isRoundInProgress}>
                   Bet Max
                 </Button>
               </div>
