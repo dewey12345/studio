@@ -18,9 +18,28 @@ export default function DashboardPage() {
     if (!currentUser) {
       router.push('/');
     } else {
-      setUser(currentUser);
+      // The full user object with password isn't stored, so we refetch from the "DB"
+      const users = authService.getUsers();
+      const fullCurrentUser = users.find(u => u.id === currentUser.id);
+      setUser(fullCurrentUser || currentUser); // Fallback to stored user
       setLoading(false);
     }
+    
+    const handleAuthChange = () => {
+        const updatedUser = authService.getCurrentUser();
+        if(!updatedUser) {
+            router.push('/');
+        } else {
+            setUser(updatedUser);
+        }
+    }
+    
+    window.addEventListener('auth-change', handleAuthChange);
+    
+    return () => {
+        window.removeEventListener('auth-change', handleAuthChange);
+    }
+
   }, [router]);
 
   if (loading) {
@@ -35,5 +54,9 @@ export default function DashboardPage() {
     );
   }
 
-  return user ? <UserDashboard user={user} /> : null;
+  const handleUserUpdate = (updatedUser: User) => {
+    setUser(updatedUser);
+  }
+
+  return user ? <UserDashboard user={user} onUserUpdate={handleUserUpdate} /> : null;
 }

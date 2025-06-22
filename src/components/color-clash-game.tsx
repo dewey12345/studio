@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { aiWinningColorSelection } from '@/ai/flows/ai-winning-color-selection';
-import type { Bet, RoundResult, Color, Totals } from '@/lib/types';
+import type { Bet, RoundResult, Color, Totals, User } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,8 +12,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { History, Palette, Redo, Shield, User, Wallet } from 'lucide-react';
+import { History, Palette, Redo, Shield, User as UserIcon, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { authService } from '@/lib/auth';
 
 const ROUND_DURATION = 30;
 const POST_ROUND_DELAY = 5;
@@ -24,16 +25,28 @@ const COLOR_CONFIG: Record<Color, { odds: number; className: string; textColor: 
   Violet: { odds: 10, className: 'bg-violet-500 hover:bg-violet-600', textColor: 'text-violet-500', borderColor: 'border-violet-500', display: 'Violet' },
 };
 
-export function ColorClashGame() {
+interface ColorClashGameProps {
+  user: User;
+  onUserUpdate: (user: User) => void;
+}
+
+export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
   const [timer, setTimer] = useState(ROUND_DURATION);
   const [isRoundInProgress, setIsRoundInProgress] = useState(true);
-  const [balance, setBalance] = useState(1000);
+  const [balance, setBalance] = useState(user.balance);
   const [betAmount, setBetAmount] = useState('10');
   const [currentBets, setCurrentBets] = useState<Bet[]>([]);
   const [betHistory, setBetHistory] = useState<RoundResult[]>([]);
   const [isAiMode, setIsAiMode] = useState(true);
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null);
+  const [manualWinner, setManualWinner] = useState<Color | null>(null);
   const { toast } = useToast();
+  
+  const isAdmin = user.role === 'admin';
+
+  useEffect(() => {
+    setBalance(user.balance);
+  }, [user.balance]);
 
   const totals = useMemo<Totals>(() => {
     return currentBets.reduce(
@@ -45,13 +58,12 @@ export function ColorClashGame() {
     );
   }, [currentBets]);
 
-  const handleRoundEnd = useCallback(async (manualWinner?: Color) => {
+  const handleRoundEnd = useCallback(async () => {
     setIsRoundInProgress(false);
-
     let winningColor: Color;
 
     if (manualWinner) {
-      winningColor = manualWinner;
+        winningColor = manualWinner;
     } else if (isAiMode) {
       try {
         const result = await aiWinningColorSelection({
@@ -67,8 +79,8 @@ export function ColorClashGame() {
         winningColor = colors[Math.floor(Math.random() * colors.length)];
       }
     } else {
-      // If not AI mode and no manual winner, something is wrong. We'll wait.
-      return;
+      const colors: Color[] = ['Red', 'Green', 'Violet'];
+      winningColor = colors[Math.floor(Math.random() * colors.length)];
     }
 
     let totalPayout = 0;
@@ -81,16 +93,25 @@ export function ColorClashGame() {
       }
     });
 
-    setBalance(prev => prev + totalPayout);
+    const newBalance = balance + totalPayout;
+    setBalance(newBalance);
+    try {
+        const updatedUser = authService.updateUserByAdmin(user.id, { balance: newBalance });
+        onUserUpdate(updatedUser);
+    } catch (error) {
+        console.error("Failed to sync balance", error);
+        toast({ title: "Sync Error", description: "Could not save new balance.", variant: "destructive" });
+    }
+
     const result: RoundResult = { winningColor, bets: currentBets, totalPayout, winningBets };
     setBetHistory(prev => [result, ...prev]);
     setRoundResult(result);
-  }, [isAiMode, totals, currentBets, toast]);
+  }, [isAiMode, totals, currentBets, toast, manualWinner, balance, user.id, onUserUpdate]);
 
   useEffect(() => {
     if (!isRoundInProgress) return;
 
-    if (timer === 0) {
+    if (timer <= 0) {
       handleRoundEnd();
       return;
     }
@@ -107,6 +128,7 @@ export function ColorClashGame() {
     setCurrentBets([]);
     setIsRoundInProgress(true);
     setRoundResult(null);
+    setManualWinner(null);
   };
   
   useEffect(() => {
@@ -131,10 +153,22 @@ export function ColorClashGame() {
       toast({ title: "Round Over", description: "Please wait for the next round to start.", variant: "destructive" });
       return;
     }
-
-    setBalance(prev => prev - amount);
+    const newBalance = balance - amount;
+    setBalance(newBalance);
     setCurrentBets(prev => [...prev, { color, amount }]);
+    try {
+        const updatedUser = authService.updateUserByAdmin(user.id, { balance: newBalance });
+        onUserUpdate(updatedUser);
+    } catch (error) {
+        console.error("Failed to sync balance", error);
+    }
   };
+  
+  const handleManualWinSelect = (color: Color) => {
+    if(!isAdmin || !isRoundInProgress) return;
+    setManualWinner(color);
+    toast({ title: "Winner Selected", description: `${color} will win at the end of the round.`});
+  }
 
   const renderHistoryTable = (results: RoundResult[]) => (
     <Table>
@@ -185,8 +219,8 @@ export function ColorClashGame() {
         </Card>
       </header>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <main className="lg:col-span-2 space-y-6">
+      <div className={cn("grid grid-cols-1 gap-6", isAdmin && "lg:grid-cols-3")}>
+        <main className={cn("space-y-6", isAdmin && "lg:col-span-2")}>
           <Card>
             <CardContent className="p-6 text-center space-y-4">
               <p className="text-muted-foreground">{isRoundInProgress ? 'Round ends in' : 'Next round starts in'}</p>
@@ -196,7 +230,7 @@ export function ColorClashGame() {
                   style={{ width: `${(timer / (isRoundInProgress ? ROUND_DURATION : POST_ROUND_DELAY)) * 100}%`}}
                 />
               </div>
-              <p className="text-6xl font-bold font-mono">{timer}</p>
+              <p className="text-6xl font-bold font-mono">{isRoundInProgress ? timer : POST_ROUND_DELAY - (ROUND_DURATION - timer)}</p>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md mx-auto">
                 <Label htmlFor="betAmount" className="sr-only">Bet Amount</Label>
@@ -234,7 +268,7 @@ export function ColorClashGame() {
             <Tabs defaultValue="current">
               <CardHeader>
                 <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="current"><User className="mr-2 h-4 w-4"/>Current Bets</TabsTrigger>
+                  <TabsTrigger value="current"><UserIcon className="mr-2 h-4 w-4"/>Current Bets</TabsTrigger>
                   <TabsTrigger value="history"><History className="mr-2 h-4 w-4"/>All History</TabsTrigger>
                 </TabsList>
               </CardHeader>
@@ -265,57 +299,60 @@ export function ColorClashGame() {
           </Card>
         </main>
         
-        <aside className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Shield className="h-5 w-5"/>Admin Panel</CardTitle>
-              <CardDescription>Control the game settings.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="ai-mode">AI Mode</Label>
-                <Switch
-                  id="ai-mode"
-                  checked={isAiMode}
-                  onCheckedChange={setIsAiMode}
-                  disabled={!isRoundInProgress}
-                />
-              </div>
-              <CardDescription>When enabled, AI picks the color with the least total bet amount as the winner.</CardDescription>
-              <div className="space-y-2">
-                <Label>Manual Override</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(Object.keys(COLOR_CONFIG) as Color[]).map(color => (
-                    <Button
-                      key={color}
-                      variant="outline"
-                      onClick={() => handleRoundEnd(color)}
-                      disabled={isAiMode || !isRoundInProgress || timer === 0}
-                    >
-                      {color}
-                    </Button>
-                  ))}
+        {isAdmin && (
+          <aside className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Shield className="h-5 w-5"/>Admin Panel</CardTitle>
+                <CardDescription>Control the game settings.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="ai-mode">AI Mode</Label>
+                  <Switch
+                    id="ai-mode"
+                    checked={isAiMode}
+                    onCheckedChange={setIsAiMode}
+                    disabled={!isRoundInProgress || !!manualWinner}
+                  />
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+                <CardDescription>When enabled, AI picks the color with the least total bet amount as the winner.</CardDescription>
+                <div className="space-y-2">
+                  <Label>Manual Override (ends round)</Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(Object.keys(COLOR_CONFIG) as Color[]).map(color => (
+                      <Button
+                        key={color}
+                        variant={manualWinner === color ? 'default' : 'outline'}
+                        onClick={() => handleManualWinSelect(color)}
+                        disabled={isAiMode || !isRoundInProgress || !!manualWinner}
+                      >
+                        {color}
+                      </Button>
+                    ))}
+                  </div>
+                   {manualWinner && <p className="text-sm text-muted-foreground pt-2">Winner set to {manualWinner}. Result will be shown when timer ends.</p>}
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Current Round Totals</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-2">
-                {(Object.keys(totals) as Color[]).map(color => (
-                  <li key={color} className="flex justify-between items-center">
-                    <span>{color}</span>
-                    <span className="font-mono font-semibold">${totals[color].toFixed(2)}</span>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </aside>
+            <Card>
+              <CardHeader>
+                <CardTitle>Current Round Totals</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {(Object.keys(totals) as Color[]).map(color => (
+                    <li key={color} className="flex justify-between items-center">
+                      <span>{color}</span>
+                      <span className="font-mono font-semibold">${totals[color].toFixed(2)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          </aside>
+        )}
       </div>
 
       <AlertDialog open={!!roundResult}>

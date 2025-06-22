@@ -15,7 +15,7 @@ const getStoredUsers = (): User[] => {
     return JSON.parse(usersJson);
   }
   // Create a default admin user if none exist
-  const adminUser: User = { id: uuidv4(), email: 'admin@example.com', password: 'password', role: 'admin' };
+  const adminUser: User = { id: uuidv4(), email: 'admin@example.com', password: 'password', role: 'admin', balance: 9999 };
   localStorage.setItem(USERS_KEY, JSON.stringify([adminUser]));
   return [adminUser];
 };
@@ -24,13 +24,13 @@ const storeUsers = (users: User[]) => {
   if (typeof window === 'undefined') return;
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
   // Dispatch a custom event to notify other components of auth change
-  window.dispatchEvent(new CustomEvent('auth-change'));
+  window.dispatchEvent(new CustomEvent('storage'));
 };
 
 const storeCurrentUser = (user: User | null) => {
     if (typeof window === 'undefined') return;
     if (user) {
-        // Omit password before storing
+        // Omit password before storing in current user session
         const { password, ...userToStore } = user;
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(userToStore));
     } else {
@@ -51,6 +51,7 @@ export const authService = {
       email,
       password: password_raw, // In a real app, you would hash this
       role: 'user',
+      balance: 1000, // Starting balance for new users
     };
     users.push(newUser);
     storeUsers(users);
@@ -77,12 +78,14 @@ export const authService = {
     return userJson ? JSON.parse(userJson) : null;
   },
   
-  getUsers: (): User[] => {
+  // Gets all users but omits their passwords for security
+  getUsers: (): Omit<User, 'password'>[] => {
     const users = getStoredUsers();
     // Return users without passwords
     return users.map(({ password, ...user }) => user);
   },
   
+  // For a user to update their own credentials
   updateUser: (id: string, email: string, newPassword?: string) => {
     const users = getStoredUsers();
     const userIndex = users.findIndex(u => u.id === id);
@@ -90,7 +93,6 @@ export const authService = {
         throw new Error("User not found");
     }
 
-    // Check if new email is already taken by another user
     if (users.some(u => u.email === email && u.id !== id)) {
         throw new Error("Email is already in use by another account.");
     }
@@ -103,12 +105,86 @@ export const authService = {
     users[userIndex] = updatedUser;
     storeUsers(users);
 
-    // If the updated user is the current user, update their session
     const currentUser = authService.getCurrentUser();
     if (currentUser && currentUser.id === id) {
         storeCurrentUser(updatedUser);
     }
     
     return updatedUser;
-  }
+  },
+
+  // For an admin to update any user's full profile
+  updateUserByAdmin: (id: string, data: Partial<User>) => {
+    let users = getStoredUsers();
+    const userIndex = users.findIndex(u => u.id === id);
+    if (userIndex === -1) {
+        throw new Error("User not found");
+    }
+    
+    // Ensure new email isn't a duplicate
+    if (data.email && users.some(u => u.email === data.email && u.id !== id)) {
+      throw new Error("Email is already in use by another account.");
+    }
+    
+    // Create the updated user object, keeping the old password if a new one isn't provided
+    const updatedUser = { 
+      ...users[userIndex], 
+      ...data,
+      password: data.password || users[userIndex].password,
+    };
+
+    users[userIndex] = updatedUser;
+    storeUsers(users);
+
+    // If the updated user is the current user, update their session
+    const currentUser = authService.getCurrentUser();
+    if (currentUser && currentUser.id === id) {
+        storeCurrentUser(updatedUser);
+    }
+
+    return updatedUser;
+  },
+
+  // For a user to add to their own balance
+  updateBalance: (id: string, amount: number) => {
+    if(amount <= 0) throw new Error("Amount must be positive.");
+    const users = getStoredUsers();
+    const userIndex = users.findIndex(u => u.id === id);
+    if (userIndex === -1) throw new Error("User not found");
+
+    const newBalance = users[userIndex].balance + amount;
+    users[userIndex].balance = newBalance;
+    storeUsers(users);
+
+    const currentUser = authService.getCurrentUser();
+    if(currentUser && currentUser.id === id) {
+      storeCurrentUser(users[userIndex]);
+    }
+    return users[userIndex];
+  },
+
+  // For an admin to create a new user
+  addUser: (data: Omit<User, 'id'>) => {
+    let users = getStoredUsers();
+    if (users.some(u => u.email === data.email)) {
+      throw new Error("User with this email already exists.");
+    }
+    const newUser: User = {
+      id: uuidv4(),
+      ...data
+    };
+    users.push(newUser);
+    storeUsers(users);
+    return newUser;
+  },
+
+  // For an admin to delete a user
+  deleteUser: (id: string) => {
+    let users = getStoredUsers();
+    const newUsers = users.filter(u => u.id !== id);
+    if(users.length === newUsers.length) {
+      throw new Error("User not found to delete.");
+    }
+    storeUsers(newUsers);
+  },
 };
