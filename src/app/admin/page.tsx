@@ -20,6 +20,22 @@ export default function AdminPage() {
       setUser(currentUser);
       setLoading(false);
     }
+
+    const handleAuthChange = () => {
+        const updatedUser = authService.getCurrentUser();
+        if(!updatedUser || updatedUser.role !== 'admin') {
+            router.push('/');
+        } else {
+            setUser(updatedUser);
+        }
+    }
+    
+    window.addEventListener('auth-change', handleAuthChange);
+    
+    return () => {
+        window.removeEventListener('auth-change', handleAuthChange);
+    }
+
   }, [router]);
 
   if (loading) {
