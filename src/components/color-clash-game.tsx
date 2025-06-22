@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -25,51 +26,94 @@ const COLOR_CONFIG: Record<Color, { odds: number; className: string; textColor: 
   Violet: { odds: 10, className: 'bg-violet-500 hover:bg-violet-600', textColor: 'text-violet-500', borderColor: 'border-violet-500', display: 'Violet' },
 };
 
+const ROUND_STATE_KEY = 'color_clash_round_state';
+const BET_HISTORY_KEY = 'color_clash_bet_history';
+
+type SyncedBet = Bet & { userId: string };
+
+interface RoundState {
+  id: string;
+  endTime: number;
+  bets: SyncedBet[];
+  winningColor: Color | null;
+  isAiMode: boolean;
+  manualWinner: Color | null;
+}
+
 interface ColorClashGameProps {
   user: User;
   onUserUpdate: (user: User) => void;
 }
 
 export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
+  const [roundState, setRoundState] = useState<RoundState | null>(null);
   const [timer, setTimer] = useState(ROUND_DURATION);
-  const [isRoundInProgress, setIsRoundInProgress] = useState(true);
   const [balance, setBalance] = useState(user.balance ?? 0);
   const [betAmount, setBetAmount] = useState('10');
-  const [currentBets, setCurrentBets] = useState<Bet[]>([]);
   const [betHistory, setBetHistory] = useState<RoundResult[]>([]);
-  const [isAiMode, setIsAiMode] = useState(true);
-  const [roundResult, setRoundResult] = useState<RoundResult | null>(null);
-  const [manualWinner, setManualWinner] = useState<Color | null>(null);
-  const { toast } = useToast();
+  const [isProcessingEnd, setIsProcessingEnd] = useState(false);
+  const [showResultDialog, setShowResultDialog] = useState(false);
   
+  const { toast } = useToast();
   const isAdmin = user.role === 'admin';
 
-  useEffect(() => {
-    setBalance(user.balance ?? 0);
-  }, [user.balance]);
+  const isRoundInProgress = roundState ? Date.now() < roundState.endTime : false;
 
-  const totals = useMemo<Totals>(() => {
-    return currentBets.reduce(
-      (acc, bet) => {
-        acc[bet.color] += bet.amount;
+  const startNewRound = useCallback(() => {
+    if (typeof window === 'undefined') return;
+
+    const lastStateRaw = localStorage.getItem(ROUND_STATE_KEY);
+    if(lastStateRaw) {
+        const lastState = JSON.parse(lastStateRaw) as RoundState;
+        if (Date.now() < lastState.endTime + (POST_ROUND_DELAY * 1000) && lastState.id !== roundState?.id) {
+            setRoundState(lastState);
+            return;
+        }
+    }
+    
+    const newRoundState: RoundState = {
+        id: new Date().getTime().toString(),
+        endTime: Date.now() + ROUND_DURATION * 1000,
+        bets: [],
+        winningColor: null,
+        isAiMode: true,
+        manualWinner: null,
+    };
+    
+    localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(newRoundState));
+    setRoundState(newRoundState);
+    setIsProcessingEnd(false);
+    setShowResultDialog(false);
+  }, [roundState?.id]);
+
+  const handleRoundEnd = useCallback(async () => {
+    if (isProcessingEnd || typeof window === 'undefined') return;
+
+    const currentState = JSON.parse(localStorage.getItem(ROUND_STATE_KEY)!) as RoundState;
+    if (currentState.winningColor) {
+      if(currentState.id === roundState?.id) setRoundState(currentState);
+      return;
+    }
+    
+    setIsProcessingEnd(true);
+
+    const currentTotals = currentState.bets.reduce(
+      (acc: Totals, bet: SyncedBet) => {
+        acc[bet.color] = (acc[bet.color] || 0) + bet.amount;
         return acc;
       },
       { Red: 0, Green: 0, Violet: 0 }
     );
-  }, [currentBets]);
 
-  const handleRoundEnd = useCallback(async () => {
-    setIsRoundInProgress(false);
     let winningColor: Color;
-
-    if (manualWinner) {
-        winningColor = manualWinner;
-    } else if (isAiMode) {
+    if (currentState.manualWinner) {
+        winningColor = currentState.manualWinner;
+    } else if (currentState.isAiMode) {
       try {
         const result = await aiWinningColorSelection({
-          redBetTotal: totals.Red,
-          greenBetTotal: totals.Green,
-          violetBetTotal: totals.Violet,
+          redBetTotal: currentTotals.Red,
+          greenBetTotal: currentTotals.Green,
+          violetBetTotal: currentTotals.Violet,
         });
         winningColor = result.winningColor;
       } catch (error) {
@@ -83,9 +127,10 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
       winningColor = colors[Math.floor(Math.random() * colors.length)];
     }
 
+    const userBets = currentState.bets.filter(b => b.userId === user.id);
     let totalPayout = 0;
     const winningBets: Bet[] = [];
-    currentBets.forEach(bet => {
+    userBets.forEach(bet => {
       if (bet.color === winningColor) {
         const payout = bet.amount * COLOR_CONFIG[bet.color].odds;
         totalPayout += payout;
@@ -93,50 +138,95 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
       }
     });
 
-    const newBalance = balance + totalPayout;
-    setBalance(newBalance);
-    try {
-        const updatedUser = authService.updateUserByAdmin(user.id, { balance: newBalance });
-        onUserUpdate(updatedUser);
-    } catch (error) {
-        console.error("Failed to sync balance", error);
-        toast({ title: "Sync Error", description: "Could not save new balance.", variant: "destructive" });
+    if (totalPayout > 0) {
+      const newBalance = (user.balance ?? 0) + totalPayout;
+      setBalance(newBalance);
+      try {
+          const updatedUser = authService.updateUserByAdmin(user.id, { balance: newBalance });
+          onUserUpdate(updatedUser);
+      } catch (error) {
+          console.error("Failed to sync balance", error);
+          toast({ title: "Sync Error", description: "Could not save new balance.", variant: "destructive" });
+      }
     }
+    
+    const finalState = { ...currentState, winningColor };
+    const result: RoundResult = { winningColor, bets: userBets, totalPayout, winningBets };
+    
+    setBetHistory(prev => {
+        const newHistory = [result, ...prev];
+        localStorage.setItem(BET_HISTORY_KEY, JSON.stringify(newHistory));
+        return newHistory;
+    });
 
-    const result: RoundResult = { winningColor, bets: currentBets, totalPayout, winningBets };
-    setBetHistory(prev => [result, ...prev]);
-    setRoundResult(result);
-  }, [isAiMode, totals, currentBets, toast, manualWinner, balance, user.id, onUserUpdate]);
+    localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(finalState));
+    setRoundState(finalState);
+    setShowResultDialog(true);
+  }, [isProcessingEnd, roundState?.id, user.id, user.balance, toast, onUserUpdate]);
+
 
   useEffect(() => {
-    if (!isRoundInProgress) return;
+    if (typeof window === 'undefined') return;
 
-    if (timer <= 0) {
-      handleRoundEnd();
-      return;
+    const handleStorageChange = (event: StorageEvent) => {
+        if (event.key === ROUND_STATE_KEY && event.newValue) {
+            const newState: RoundState = JSON.parse(event.newValue);
+            if (newState.id !== roundState?.id) {
+              setRoundState(newState);
+            }
+        }
+    };
+    
+    const savedStateRaw = localStorage.getItem(ROUND_STATE_KEY);
+    if (savedStateRaw) {
+        const savedState = JSON.parse(savedStateRaw);
+        if(savedState.id !== roundState?.id) setRoundState(savedState);
+    } else {
+        startNewRound();
+    }
+    
+    const savedHistoryRaw = localStorage.getItem(BET_HISTORY_KEY);
+    if (savedHistoryRaw) {
+        setBetHistory(JSON.parse(savedHistoryRaw));
     }
 
-    const intervalId = setInterval(() => {
-      setTimer(t => t - 1);
-    }, 1000);
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+        window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [startNewRound, roundState?.id]);
 
+  useEffect(() => {
+    setBalance(user.balance ?? 0);
+  }, [user.balance]);
+
+  useEffect(() => {
+    if (!roundState) return;
+
+    const updateTimer = () => {
+      const now = Date.now();
+      if (now < roundState.endTime) {
+        // Round in progress
+        setTimer(Math.ceil((roundState.endTime - now) / 1000));
+      } else {
+        // Post-round cooldown
+        if (!roundState.winningColor) {
+           handleRoundEnd();
+        }
+        const cooldownEnds = roundState.endTime + (POST_ROUND_DELAY * 1000);
+        if (now < cooldownEnds) {
+          setTimer(Math.ceil((cooldownEnds - now) / 1000));
+        } else {
+          startNewRound();
+        }
+      }
+    };
+    
+    updateTimer();
+    const intervalId = setInterval(updateTimer, 500);
     return () => clearInterval(intervalId);
-  }, [timer, isRoundInProgress, handleRoundEnd]);
 
-  const startNewRound = () => {
-    setTimer(ROUND_DURATION);
-    setCurrentBets([]);
-    setIsRoundInProgress(true);
-    setRoundResult(null);
-    setManualWinner(null);
-  };
-  
-  useEffect(() => {
-    if (roundResult) {
-      const timeoutId = setTimeout(startNewRound, POST_ROUND_DELAY * 1000);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [roundResult]);
+  }, [roundState, handleRoundEnd, startNewRound]);
 
 
   const handleBet = (color: Color) => {
@@ -145,7 +235,7 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
       toast({ title: "Invalid Bet", description: "Please enter a positive number.", variant: "destructive" });
       return;
     }
-    if (amount > (balance ?? 0)) {
+    if (amount > balance) {
       toast({ title: "Insufficient Funds", description: "You do not have enough balance to place this bet.", variant: "destructive" });
       return;
     }
@@ -153,9 +243,16 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
       toast({ title: "Round Over", description: "Please wait for the next round to start.", variant: "destructive" });
       return;
     }
-    const newBalance = (balance ?? 0) - amount;
+
+    const newBalance = balance - amount;
     setBalance(newBalance);
-    setCurrentBets(prev => [...prev, { color, amount }]);
+
+    const newBet: SyncedBet = { color, amount, userId: user.id };
+    const currentState = JSON.parse(localStorage.getItem(ROUND_STATE_KEY)!) as RoundState;
+    const newState = { ...currentState, bets: [...currentState.bets, newBet] };
+    localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(newState));
+    setRoundState(newState);
+
     try {
         const updatedUser = authService.updateUserByAdmin(user.id, { balance: newBalance });
         onUserUpdate(updatedUser);
@@ -164,11 +261,32 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
     }
   };
   
-  const handleManualWinSelect = (color: Color) => {
-    if(!isAdmin || !isRoundInProgress) return;
-    setManualWinner(color);
-    toast({ title: "Winner Selected", description: `${color} will win at the end of the round.`});
+  const handleAdminControlChange = (change: Partial<Pick<RoundState, 'isAiMode' | 'manualWinner'>>) => {
+      if(!isAdmin || !isRoundInProgress) return;
+      const currentState = JSON.parse(localStorage.getItem(ROUND_STATE_KEY)!) as RoundState;
+      const newState = {...currentState, ...change};
+      if(change.manualWinner) {
+        newState.isAiMode = false;
+        toast({ title: "Winner Selected", description: `${change.manualWinner} will win at the end of the round.`});
+      }
+      localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(newState));
+      setRoundState(newState);
   }
+
+  const totals = useMemo<Totals>(() => {
+    if (!roundState) return { Red: 0, Green: 0, Violet: 0 };
+    return roundState.bets.reduce(
+      (acc: Totals, bet: SyncedBet) => {
+        acc[bet.color] = (acc[bet.color] || 0) + bet.amount;
+        return acc;
+      },
+      { Red: 0, Green: 0, Violet: 0 }
+    );
+  }, [roundState]);
+
+  const currentBets = useMemo(() => {
+    return roundState?.bets.filter(b => b.userId === user.id) ?? [];
+  }, [roundState, user.id]);
 
   const renderHistoryTable = (results: RoundResult[]) => (
     <Table>
@@ -200,6 +318,8 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
       </TableBody>
     </Table>
   );
+  
+  const lastResult = betHistory[0];
 
   return (
     <div className="space-y-6">
@@ -230,7 +350,7 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
                   style={{ width: `${(timer / (isRoundInProgress ? ROUND_DURATION : POST_ROUND_DELAY)) * 100}%`}}
                 />
               </div>
-              <p className="text-6xl font-bold font-mono">{isRoundInProgress ? timer : POST_ROUND_DELAY - (ROUND_DURATION - timer)}</p>
+              <p className="text-6xl font-bold font-mono">{timer}</p>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md mx-auto">
                 <Label htmlFor="betAmount" className="sr-only">Bet Amount</Label>
@@ -268,8 +388,8 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
             <Tabs defaultValue="current">
               <CardHeader>
                 <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="current"><UserIcon className="mr-2 h-4 w-4"/>Current Bets</TabsTrigger>
-                  <TabsTrigger value="history"><History className="mr-2 h-4 w-4"/>All History</TabsTrigger>
+                  <TabsTrigger value="current"><UserIcon className="mr-2 h-4 w-4"/>Your Bets This Round</TabsTrigger>
+                  <TabsTrigger value="history"><History className="mr-2 h-4 w-4"/>Your Bet History</TabsTrigger>
                 </TabsList>
               </CardHeader>
               <CardContent>
@@ -308,37 +428,37 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="ai-mode">AI Mode</Label>
+                  <Label htmlFor="ai-mode">AI Winner Selection</Label>
                   <Switch
                     id="ai-mode"
-                    checked={isAiMode}
-                    onCheckedChange={setIsAiMode}
-                    disabled={!isRoundInProgress || !!manualWinner}
+                    checked={roundState?.isAiMode ?? true}
+                    onCheckedChange={(checked) => handleAdminControlChange({ isAiMode: checked })}
+                    disabled={!isRoundInProgress || !!roundState?.manualWinner}
                   />
                 </div>
                 <CardDescription>When enabled, AI picks the color with the least total bet amount as the winner.</CardDescription>
                 <div className="space-y-2">
-                  <Label>Manual Override (ends round)</Label>
+                  <Label>Manual Override</Label>
                   <div className="grid grid-cols-3 gap-2">
                     {(Object.keys(COLOR_CONFIG) as Color[]).map(color => (
                       <Button
                         key={color}
-                        variant={manualWinner === color ? 'default' : 'outline'}
-                        onClick={() => handleManualWinSelect(color)}
-                        disabled={isAiMode || !isRoundInProgress || !!manualWinner}
+                        variant={roundState?.manualWinner === color ? 'default' : 'outline'}
+                        onClick={() => handleAdminControlChange({ manualWinner: color })}
+                        disabled={!isRoundInProgress || !!roundState?.manualWinner || !roundState?.isAiMode === false}
                       >
                         {color}
                       </Button>
                     ))}
                   </div>
-                   {manualWinner && <p className="text-sm text-muted-foreground pt-2">Winner set to {manualWinner}. Result will be shown when timer ends.</p>}
+                   {roundState?.manualWinner && <p className="text-sm text-muted-foreground pt-2">Winner set to {roundState.manualWinner}. Result will be shown when timer ends.</p>}
                 </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>Current Round Totals</CardTitle>
+                <CardTitle>Current Round Totals (All Users)</CardTitle>
               </CardHeader>
               <CardContent>
                 <ul className="space-y-2">
@@ -355,20 +475,22 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
         )}
       </div>
 
-      <AlertDialog open={!!roundResult}>
+      <AlertDialog open={showResultDialog} onOpenChange={setShowResultDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Round Over!</AlertDialogTitle>
-            <AlertDialogDescription>
-              The winning color is <span className={cn("font-bold text-lg", roundResult && COLOR_CONFIG[roundResult.winningColor].textColor)}>{roundResult?.winningColor}</span>.
-              {roundResult && roundResult.totalPayout > 0 ? 
-                ` You won $${roundResult.totalPayout.toFixed(2)}!`
-                : " Better luck next time!"}
-            </AlertDialogDescription>
+            {lastResult && (
+                 <AlertDialogDescription>
+                    The winning color is <span className={cn("font-bold text-lg", COLOR_CONFIG[lastResult.winningColor].textColor)}>{lastResult.winningColor}</span>.
+                    {lastResult.totalPayout > 0 ? 
+                      ` You won $${lastResult.totalPayout.toFixed(2)}!`
+                      : " Better luck next time!"}
+                  </AlertDialogDescription>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={startNewRound}>
-              <Redo className="mr-2 h-4 w-4"/> Next Round
+            <AlertDialogAction onClick={() => setShowResultDialog(false)}>
+              Continue
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
