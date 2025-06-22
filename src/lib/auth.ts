@@ -15,7 +15,7 @@ const getStoredUsers = (): User[] => {
     return JSON.parse(usersJson);
   }
   // Create a default admin user if none exist
-  const adminUser: User = { id: uuidv4(), email: 'admin@example.com', password: 'password', role: 'admin', balance: 9999 };
+  const adminUser: User = { id: uuidv4(), email: 'imblaster2019@gmail.com', password: 'password', role: 'admin', balance: 9999 };
   localStorage.setItem(USERS_KEY, JSON.stringify([adminUser]));
   return [adminUser];
 };
