@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { getNumberDetails } from '@/lib/game-logic';
 import { GAME_SETTINGS_KEY, ROUND_HISTORY_KEY } from '@/lib/constants';
 import Leaderboard from './leaderboard';
+import { Label } from '@/components/ui/label';
 
 interface AdminPanelProps {
   adminUser: User;
