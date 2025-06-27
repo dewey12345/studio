@@ -112,7 +112,7 @@ export default function Leaderboard({ isAdminView = false }: LeaderboardProps) {
                     </TableCell>
                     <TableCell>{displayName}</TableCell>
                     <TableCell className={`text-right font-mono font-semibold ${entry.totalWinnings >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      ${entry.totalWinnings.toFixed(2)}
+                      ₹{entry.totalWinnings.toFixed(2)}
                     </TableCell>
                   </TableRow>
                 )
@@ -128,3 +128,5 @@ export default function Leaderboard({ isAdminView = false }: LeaderboardProps) {
     </Card>
   );
 }
+
+    

@@ -30,12 +30,12 @@ const updateSchema = z.object({
 type UpdateFormValues = z.infer<typeof updateSchema>;
 
 const fundsSchema = z.object({
-    amount: z.coerce.number().positive("Must be a positive number.").min(1, "Amount must be at least $1."),
+    amount: z.coerce.number().positive("Must be a positive number.").min(1, "Amount must be at least ₹1."),
 })
 type FundsFormValues = z.infer<typeof fundsSchema>;
 
 const withdrawSchema = z.object({
-    amount: z.coerce.number().positive("Must be a positive number.").min(1, "Amount must be at least $1."),
+    amount: z.coerce.number().positive("Must be a positive number.").min(1, "Amount must be at least ₹1."),
 })
 type WithdrawFormValues = z.infer<typeof withdrawSchema>;
 
@@ -86,7 +86,7 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
         const updatedUser = authService.updateBalance(user.id, data.amount);
         onUserUpdate(updatedUser);
         fundsForm.reset();
-        toast({ title: "Success", description: `$${data.amount.toFixed(2)} has been added to your balance.` });
+        toast({ title: "Success", description: `₹${data.amount.toFixed(2)} has been added to your balance.` });
     } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -172,7 +172,7 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
                                         {withdrawalHistory.length > 0 ? withdrawalHistory.map(req => (
                                             <TableRow key={req.id}>
                                                 <TableCell>{new Date(req.timestamp).toLocaleDateString()}</TableCell>
-                                                <TableCell>${req.amount.toFixed(2)}</TableCell>
+                                                <TableCell>₹{req.amount.toFixed(2)}</TableCell>
                                                 <TableCell>
                                                     <span className={`px-2 py-1 rounded-full text-xs ${req.status === 'pending' ? 'bg-yellow-500 text-black' : 'bg-green-500 text-white'}`}>
                                                         {req.status}
@@ -194,3 +194,5 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
     </div>
   );
 }
+
+    

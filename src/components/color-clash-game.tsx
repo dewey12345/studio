@@ -302,7 +302,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     try {
         const updatedUser = authService.updateBalance(user.id, -finalBetAmount);
         onUserUpdate(updatedUser);
-        toast({ title: "Bet Placed!", description: `You bet $${finalBetAmount.toFixed(2)} on ${value}.`})
+        toast({ title: "Bet Placed!", description: `You bet ₹${finalBetAmount.toFixed(2)} on ${value}.`})
     } catch (error) {
         console.error("Failed to sync balance", error);
     }
@@ -354,7 +354,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="p-3 pt-0">
-            <div className="text-2xl font-bold font-mono">${(balance ?? 0).toFixed(2)}</div>
+            <div className="text-2xl font-bold font-mono">₹{(balance ?? 0).toFixed(2)}</div>
           </CardContent>
         </Card>
       </header>
@@ -456,7 +456,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                             <TableHead>Period</TableHead>
                             <TableHead>Result</TableHead>
                             <TableHead>Your Bets</TableHead>
-                            <TableHead className="text-right">Net +/-</TableHead>
+                            <TableHead className="text-right">Profit/Loss</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -465,7 +465,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                           const totalBetAmount = result.bets.reduce((sum, bet) => sum + bet.amount, 0);
                           const netResult = result.totalPayout - totalBetAmount;
                           const betsSummary = result.bets.length > 0 
-                            ? result.bets.map(b => `${b.value} ($${b.amount.toFixed(0)})`).join(', ') 
+                            ? result.bets.map(b => `${b.value} (₹${b.amount.toFixed(0)})`).join(', ') 
                             : 'No Bet';
 
                           return (
@@ -482,7 +482,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                                 </TableCell>
                                 <TableCell className="max-w-[150px] truncate text-xs">{betsSummary}</TableCell>
                                 <TableCell className={`text-right font-mono font-semibold ${netResult >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {netResult >= 0 ? `+$${netResult.toFixed(2)}` : `-$${Math.abs(netResult).toFixed(2)}`}
+                                    {netResult >= 0 ? `+₹${netResult.toFixed(2)}` : `-₹${Math.abs(netResult).toFixed(2)}`}
                                 </TableCell>
                             </TableRow>
                           )
@@ -515,17 +515,18 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                 {lastResult.bets.map((bet, index) => {
                     const payout = getPayout(bet, lastResult.winningNumber);
                     const win = payout > 0;
+                    const profit = payout - bet.amount;
                     return (
                         <div key={index} className={cn(
                             "flex justify-between items-center text-sm p-3 rounded-md",
                             win ? 'bg-green-900/50 text-white' : 'bg-red-900/50 text-white'
                         )}>
-                            <span>Bet on {bet.type} ({bet.value}) for <span className="font-bold">${bet.amount.toFixed(2)}</span></span>
+                            <span>Bet on {bet.type} ({bet.value}) for <span className="font-bold">₹{bet.amount.toFixed(2)}</span></span>
                             <span className={cn(
                                 "font-bold text-base",
                                 win ? 'text-green-400' : 'text-red-400'
                             )}>
-                                {win ? `+ $${payout.toFixed(2)}` : `- $${bet.amount.toFixed(2)}`}
+                                {win ? `+ ₹${profit.toFixed(2)}` : `- ₹${bet.amount.toFixed(2)}`}
                             </span>
                         </div>
                     );
@@ -536,9 +537,9 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
           {lastResult && (
             <div className="mt-4 pt-4 border-t border-border">
                 <p className="text-right font-bold text-xl">
-                    Total Net: 
+                    Round Profit/Loss: 
                     <span className={netResult >= 0 ? 'text-green-400' : 'text-red-400'}>
-                      {netResult >= 0 ? ` +$${netResult.toFixed(2)}` : ` -$${Math.abs(netResult).toFixed(2)}`}
+                      {netResult >= 0 ? ` +₹${netResult.toFixed(2)}` : ` -₹${Math.abs(netResult).toFixed(2)}`}
                     </span>
                 </p>
             </div>
@@ -554,3 +555,5 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     </div>
   );
 }
+
+    

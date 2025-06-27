@@ -200,7 +200,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
                     {users.map(user => (
                         <TableRow key={user.id}>
                         <TableCell>{user.email}</TableCell>
-                        <TableCell>${user.balance.toFixed(2)}</TableCell>
+                        <TableCell>₹{user.balance.toFixed(2)}</TableCell>
                         <TableCell>
                             <span className={`px-2 py-1 rounded-full text-xs ${user.role === 'admin' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground'}`}>
                                 {user.role}
@@ -256,7 +256,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
                             <TableRow key={req.id}>
                                 <TableCell>{new Date(req.timestamp).toLocaleString()}</TableCell>
                                 <TableCell>{req.userEmail}</TableCell>
-                                <TableCell>${req.amount.toFixed(2)}</TableCell>
+                                <TableCell>₹{req.amount.toFixed(2)}</TableCell>
                                 <TableCell>
                                     <span className={`px-2 py-1 rounded-full text-xs ${req.status === 'pending' ? 'bg-yellow-500 text-black' : 'bg-green-500 text-white'}`}>
                                         {req.status}
@@ -379,3 +379,5 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     </div>
   );
 }
+
+    
