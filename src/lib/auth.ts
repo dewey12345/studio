@@ -5,6 +5,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { User } from './types';
 import { USERS_KEY, CURRENT_USER_KEY } from './constants';
+import { apiKeyService } from './apiKeyService';
 
 const getStoredUsers = (): User[] => {
   if (typeof window === 'undefined') return [];
@@ -13,9 +14,15 @@ const getStoredUsers = (): User[] => {
     return JSON.parse(usersJson);
   }
   // Create a default admin user if none exist
-  const adminUser: User = { id: 'admin_user_001', email: 'imblaster2019@gmail.com', password: 'password', role: 'admin', balance: 99999 };
-  const regularUser: User = { id: 'regular_user_001', email: 'user@example.com', password: 'password', role: 'user', balance: 1000 };
+  const adminUser: User = { id: 'admin_user_01', email: 'imblaster2019@gmail.com', password: 'password', role: 'admin', balance: 99999 };
+  const regularUser: User = { id: 'regular_user_01', email: 'user@example.com', password: 'password', role: 'user', balance: 1000 };
   localStorage.setItem(USERS_KEY, JSON.stringify([adminUser, regularUser]));
+  
+  // Also set a default API key if none exists
+  if (!apiKeyService.getApiKey()) {
+    apiKeyService.setApiKey('YOUR_GEMINI_API_KEY_HERE');
+  }
+
   return [adminUser, regularUser];
 };
 
