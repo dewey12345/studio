@@ -16,11 +16,12 @@ import { authService } from '@/lib/auth';
 import { getNumberDetails, getPayout, NUMBER_CONFIG } from '@/lib/game-logic';
 import { GAME_SETTINGS_KEY, GLOBAL_ROUND_HISTORY_KEY, ROUND_STATE_KEY } from '@/lib/constants';
 import Leaderboard from './leaderboard';
+import { Input } from './ui/input';
 
 const ROUND_DURATION = 30;
 const POST_ROUND_DELAY = 5;
 
-const BET_MULTIPLIERS = [1, 5, 10, 20, 50, 100];
+const BET_MULTIPLIERS = [1, 2, 4, 8, 10];
 
 type SyncedBet = Bet & { userId: string };
 
@@ -50,6 +51,20 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   const { toast } = useToast();
 
   const isRoundInProgress = roundState ? Date.now() < roundState.endTime : false;
+
+  useEffect(() => {
+    const globalHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
+    const userHistory = globalHistory.map(round => {
+        const userBets = round.bets.filter(b => b.userId === user.id);
+        const userTotalPayout = userBets.reduce((sum, bet) => sum + (bet.payout || 0), 0);
+        return {
+            ...round,
+            bets: userBets,
+            totalPayout: userTotalPayout,
+        };
+    }).filter(round => round.bets.length > 0); 
+    setBetHistory(userHistory.slice(0, 50));
+  }, [user.id]);
 
   const startNewRound = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -138,23 +153,40 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
         authService.updateMultipleUsers(updatedUsers);
     }
     
-    const finalState = { ...currentState, winningNumber };
-    const userBets = currentState.bets.filter(b => b.userId === user.id);
-    const userTotalPayout = totalPayouts.get(user.id) || 0;
-
-    const result: RoundResult = { 
+    // Create a single, definitive result for this round for global history
+    const roundBetsWithPayouts = currentState.bets.map(bet => ({
+        ...bet,
+        payout: getPayout(bet, winningNumber)
+    }));
+    const globalRoundResult: RoundResult = {
         id: currentState.id,
-        winningNumber: winningNumber, 
-        bets: userBets, 
-        totalPayout: userTotalPayout,
+        winningNumber: winningNumber,
+        bets: roundBetsWithPayouts,
+        totalPayout: Array.from(totalPayouts.values()).reduce((sum, payout) => sum + payout, 0)
     };
-    
+
     const globalHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
-    globalHistory.unshift(result);
+    globalHistory.unshift(globalRoundResult);
     localStorage.setItem(GLOBAL_ROUND_HISTORY_KEY, JSON.stringify(globalHistory.slice(0, 50)));
 
-    setBetHistory(prev => [result, ...prev].slice(0, 50));
+    // For the current user's local history and dialog box
+    const userBets = currentState.bets.filter(b => b.userId === user.id);
+    const userTotalPayout = totalPayouts.get(user.id) || 0;
+    const userBetsWithPayouts = userBets.map(bet => ({
+        ...bet,
+        payout: getPayout(bet, winningNumber)
+    }));
+
+    const userRoundResult: RoundResult = {
+        id: currentState.id,
+        winningNumber: winningNumber,
+        bets: userBetsWithPayouts,
+        totalPayout: userTotalPayout
+    };
+
+    setBetHistory(prev => [userRoundResult, ...prev].slice(0, 50));
     
+    const finalState = { ...currentState, winningNumber };
     localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(finalState));
     setRoundState(finalState);
     setShowResultDialog(true);
@@ -215,6 +247,10 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
 
 
   const handleBet = (type: BetType, value: string | number) => {
+    if (betAmount <= 0) {
+      toast({ title: "Invalid Amount", description: "Bet amount must be greater than zero.", variant: "destructive" });
+      return;
+    }
     const finalBetAmount = betAmount * betMultiplier;
     if (isNaN(finalBetAmount) || finalBetAmount <= 0) {
       toast({ title: "Invalid Bet", description: "Please enter a positive number.", variant: "destructive" });
@@ -256,7 +292,11 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
         toast({ title: "No Numbers Selected", description: "Please select one or more numbers to bet on.", variant: "destructive" });
         return;
     }
-    // This is a simplified approach: each number gets the same bet amount.
+    
+    if (betAmount <= 0) {
+      toast({ title: "Invalid Amount", description: "Bet amount must be greater than zero.", variant: "destructive" });
+      return;
+    }
     const totalBetCost = betAmount * betMultiplier * selectedNumbers.length;
     if (totalBetCost > balance) {
         toast({ title: "Insufficient Funds", variant: "destructive" });
@@ -349,19 +389,21 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
         <Card>
             <CardContent className="p-4 flex flex-col gap-4">
                 <div className="flex items-center gap-4">
-                    <span className="font-bold">Bet:</span>
-                    <div className="flex-grow grid grid-cols-2 sm:grid-cols-4 gap-2">
-                         <Button variant={betAmount === 10 ? 'default' : 'outline'} onClick={() => setBetAmount(10)}>10</Button>
-                         <Button variant={betAmount === 100 ? 'default' : 'outline'} onClick={() => setBetAmount(100)}>100</Button>
-                         <Button variant={betAmount === 1000 ? 'default' : 'outline'} onClick={() => setBetAmount(1000)}>1000</Button>
-                         <Button variant={betAmount === 10000 ? 'default' : 'outline'} onClick={() => setBetAmount(10000)}>10000</Button>
-                    </div>
+                    <span className="font-bold w-12 shrink-0">Bet:</span>
+                    <Input
+                        type="number"
+                        value={betAmount}
+                        onChange={(e) => setBetAmount(parseInt(e.target.value, 10) || 0)}
+                        placeholder="10"
+                        min="1"
+                        className="flex-grow"
+                    />
                 </div>
                  <div className="flex items-center gap-4">
-                    <span className="font-bold">Mult:</span>
-                    <div className="flex-grow grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    <span className="font-bold w-12 shrink-0">Mult:</span>
+                    <div className="flex-grow grid grid-cols-5 gap-2">
                         {BET_MULTIPLIERS.map(m => (
-                             <Button key={m} variant={betMultiplier === m ? 'default' : 'outline'} onClick={() => setBetMultiplier(m)}>x{m}</Button>
+                             <Button key={m} size="sm" variant={betMultiplier === m ? 'default' : 'outline'} onClick={() => setBetMultiplier(m)}>x{m}</Button>
                         ))}
                     </div>
                 </div>
@@ -382,24 +424,39 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                         <TableHeader>
                             <TableRow>
                             <TableHead>Period</TableHead>
-                            <TableHead>Number</TableHead>
                             <TableHead>Result</TableHead>
+                            <TableHead>Your Bets</TableHead>
+                            <TableHead className="text-right">Net +/-</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                         {betHistory.length > 0 ? betHistory.map((result) => {
                           const details = getNumberDetails(result.winningNumber);
+                          const totalBetAmount = result.bets.reduce((sum, bet) => sum + bet.amount, 0);
+                          const netResult = result.totalPayout - totalBetAmount;
+                          const betsSummary = result.bets.length > 0 
+                            ? result.bets.map(b => `${b.value} ($${b.amount.toFixed(0)})`).join(', ') 
+                            : 'No Bet';
+
                           return (
                             <TableRow key={result.id}>
                                 <TableCell className="font-mono text-xs">{result.id}</TableCell>
-                                <TableCell className="font-bold text-lg">{result.winningNumber}</TableCell>
-                                <TableCell className="flex items-center gap-2">
-                                    <span className={cn('font-semibold', details.color === 'Green' ? 'text-green-500' : details.color === 'Red' ? 'text-red-500' : 'text-violet-500')}>{details.color}</span>
-                                    <span className={cn('font-semibold', details.size === 'Big' ? 'text-orange-500' : 'text-blue-500')}>{details.size}</span>
+                                <TableCell>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-bold text-lg">{result.winningNumber}</span>
+                                        <div className="flex flex-col text-xs">
+                                             <span className={cn('font-semibold', details.color === 'Green' ? 'text-green-500' : details.color === 'Red' ? 'text-red-500' : 'text-violet-500')}>{details.color}</span>
+                                             <span className={cn('font-semibold', details.size === 'Big' ? 'text-orange-500' : 'text-blue-500')}>{details.size}</span>
+                                        </div>
+                                    </div>
+                                </TableCell>
+                                <TableCell className="max-w-[150px] truncate text-xs">{betsSummary}</TableCell>
+                                <TableCell className={`text-right font-mono font-semibold ${netResult >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {netResult >= 0 ? `+$${netResult.toFixed(2)}` : `-$${Math.abs(netResult).toFixed(2)}`}
                                 </TableCell>
                             </TableRow>
                           )
-                        }) : <TableRow><TableCell colSpan={3} className="text-center">No history yet.</TableCell></TableRow>}
+                        }) : <TableRow><TableCell colSpan={4} className="text-center">No history yet.</TableCell></TableRow>}
                         </TableBody>
                     </Table>
                 </TabsContent>
@@ -415,12 +472,41 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Round Over!</AlertDialogTitle>
             {lastResult && (
-                 <AlertDialogDescription>
-                    The winning number is <span className="font-bold text-lg text-accent">{lastResult.winningNumber}</span>.
-                    {lastResult.totalPayout > 0 ? 
-                      ` You won $${lastResult.totalPayout.toFixed(2)}!`
-                      : " Better luck next time!"}
-                  </AlertDialogDescription>
+                 <div>
+                    <p className="text-lg">
+                        Winning Number: <span className="font-bold text-2xl text-accent">{lastResult.winningNumber}</span>
+                    </p>
+                    <div className="mt-4 space-y-2">
+                        <h4 className="font-semibold">Your Results:</h4>
+                        {lastResult.bets.length > 0 ? (
+                            lastResult.bets.map((bet, index) => {
+                                const payout = getPayout(bet, lastResult.winningNumber);
+                                const win = payout > 0;
+                                return (
+                                    <div key={index} className="flex justify-between items-center text-sm p-2 bg-secondary rounded-md">
+                                        <span>Bet on {bet.type} ({bet.value}) for ${bet.amount.toFixed(2)}</span>
+                                        <span className={win ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                                            {win ? `+ $${payout.toFixed(2)}` : `- $${bet.amount.toFixed(2)}`}
+                                        </span>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <p className="text-sm text-muted-foreground">You didn't place any bets this round.</p>
+                        )}
+                    </div>
+                    {lastResult.bets.length > 0 && (
+                        <>
+                         <hr className="my-4 border-border"/>
+                         <p className="text-right font-bold text-lg">
+                             Total Net: 
+                             <span className={lastResult.totalPayout - lastResult.bets.reduce((s, b) => s + b.amount, 0) >= 0 ? 'text-green-400' : 'text-red-400'}>
+                                 {` $${(lastResult.totalPayout - lastResult.bets.reduce((s, b) => s + b.amount, 0)).toFixed(2)}`}
+                             </span>
+                         </p>
+                        </>
+                    )}
+                </div>
             )}
           </AlertDialogHeader>
           <AlertDialogFooter>
