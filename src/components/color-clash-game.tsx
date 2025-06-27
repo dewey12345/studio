@@ -17,6 +17,7 @@ import { getNumberDetails, getPayout, NUMBER_CONFIG } from '@/lib/game-logic';
 import { GAME_SETTINGS_KEY, GLOBAL_ROUND_HISTORY_KEY, ROUND_STATE_KEY } from '@/lib/constants';
 import Leaderboard from './leaderboard';
 import { Input } from './ui/input';
+import { Logo } from './logo';
 
 const ROUND_DURATION = 30;
 const POST_ROUND_DELAY = 5;
