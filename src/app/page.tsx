@@ -12,7 +12,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { authService } from '@/lib/auth';
-import { Palette } from 'lucide-react';
+import { Logo } from '@/components/logo';
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
@@ -54,8 +54,8 @@ export default function LoginPage() {
     <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-            <div className="flex justify-center items-center gap-2 mb-2">
-                <Palette className="h-8 w-8 text-primary" />
+            <div className="flex justify-center items-center gap-3 mb-2">
+                <Logo className="h-10 w-10" />
                 <CardTitle className="text-3xl">Color Clash</CardTitle>
             </div>
           <CardDescription>Enter your credentials to access your account</CardDescription>

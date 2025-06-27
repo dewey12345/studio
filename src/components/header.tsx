@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth';
 import type { User } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { Palette, LogOut, User as UserIcon, Shield } from 'lucide-react';
+import { LogOut, User as UserIcon, Shield } from 'lucide-react';
+import { Logo } from './logo';
 
 export default function Header() {
   const router = useRouter();
@@ -39,7 +40,7 @@ export default function Header() {
     <header className="border-b">
       <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href={user ? '/dashboard' : '/'} className="flex items-center gap-2">
-          <Palette className="h-6 w-6 text-primary" />
+          <Logo className="h-8 w-8" />
           <span className="font-bold text-lg">Color Clash</span>
         </Link>
         <nav className="flex items-center gap-4">
