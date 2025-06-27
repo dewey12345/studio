@@ -97,6 +97,9 @@ export default function LoginPage() {
               Sign up
             </Link>
           </div>
+           <p className="mt-4 text-center text-xs text-muted-foreground">
+            Disclaimer: This game involves financial risk and may be addictive. Please play responsibly at your own risk. For users 21+ only.
+          </p>
         </CardContent>
       </Card>
     </div>

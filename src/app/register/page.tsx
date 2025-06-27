@@ -13,10 +13,14 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { authService } from '@/lib/auth';
 import { Logo } from '@/components/logo';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const registerSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
+  terms: z.literal(true, {
+    errorMap: () => ({ message: 'You must be 21+ and accept the terms and conditions to continue.' }),
+  }),
 });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
@@ -29,6 +33,7 @@ export default function RegisterPage() {
     defaultValues: {
       email: '',
       password: '',
+      terms: false,
     },
   });
 
@@ -83,6 +88,33 @@ export default function RegisterPage() {
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="terms"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel className="text-xs">
+                        I confirm I am 21+ years old and I accept the{' '}
+                        <Link href="/terms" className="underline hover:text-primary" target="_blank">
+                          Terms & Conditions
+                        </Link>
+                        {' and '}
+                        <Link href="/disclaimer" className="underline hover:text-primary" target="_blank">
+                          Disclaimer
+                        </Link>.
+                      </FormLabel>
+                       <FormMessage />
+                    </div>
+                  </FormItem>
+                )}
+              />
               <Button type="submit" className="w-full">
                 Sign Up
               </Button>
@@ -94,6 +126,9 @@ export default function RegisterPage() {
               Sign in
             </Link>
           </div>
+          <p className="mt-4 text-center text-xs text-muted-foreground">
+            Disclaimer: This game involves financial risk and may be addictive. Please play responsibly at your own risk. For users 21+ only.
+          </p>
         </CardContent>
       </Card>
     </div>
