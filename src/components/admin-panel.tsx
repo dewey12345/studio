@@ -8,14 +8,15 @@ import { z } from 'zod';
 import { authService } from '@/lib/auth';
 import { supportService } from '@/lib/supportService';
 import { withdrawalService } from '@/lib/withdrawService';
-import type { User, SupportTicket, WithdrawalRequest, GameSettings, RoundResult, LeaderboardEntry } from '@/lib/types';
+import { apiKeyService } from '@/lib/apiKeyService';
+import type { User, SupportTicket, WithdrawalRequest, GameSettings, LeaderboardEntry } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { Users, KeyRound, PlusCircle, Edit, Trash2, Shield, LifeBuoy, Banknote, Trophy, Gamepad2, Settings } from 'lucide-react';
+import { Users, KeyRound, PlusCircle, Edit, Trash2, Shield, LifeBuoy, Banknote, Trophy, Gamepad2, Settings, CloudCog } from 'lucide-react';
 import { UserEditDialog } from './user-edit-dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -46,6 +47,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [gameSettings, setGameSettings] = useState<GameSettings>({ difficulty: 'easy' });
   const [predictionNumber, setPredictionNumber] = useState<string>('');
+  const [apiKey, setApiKey] = useState('');
   
   const { toast } = useToast();
 
@@ -55,6 +57,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     setWithdrawalRequests(withdrawalService.getAllRequests());
     const settings = localStorage.getItem(GAME_SETTINGS_KEY);
     if(settings) setGameSettings(JSON.parse(settings));
+    setApiKey(apiKeyService.getApiKey() || '');
   }, []);
 
   useEffect(() => {
@@ -164,17 +167,23 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     setPredictionNumber('');
   }
 
+  const handleSaveApiKey = () => {
+    apiKeyService.setApiKey(apiKey);
+    toast({ title: "Success", description: "API Key has been saved." });
+  }
+
   return (
     <div className="space-y-8">
       <h1 className="text-3xl font-bold flex items-center gap-2"><Shield /> Admin Dashboard</h1>
 
       <Tabs defaultValue="users">
-        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 md:grid-cols-5 h-auto">
+        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 md:grid-cols-6 h-auto">
           <TabsTrigger value="users"><Users />User Management</TabsTrigger>
           <TabsTrigger value="withdrawals"><Banknote/>Withdrawals</TabsTrigger>
           <TabsTrigger value="support"><LifeBuoy/>Support</TabsTrigger>
           <TabsTrigger value="leaderboard"><Trophy/>Leaderboard</TabsTrigger>
           <TabsTrigger value="game"><Gamepad2/>Game Control</TabsTrigger>
+          <TabsTrigger value="api"><CloudCog/>API Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="mt-6">
@@ -368,6 +377,31 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
             </Card>
         </TabsContent>
 
+        <TabsContent value="api" className="mt-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><CloudCog />API Settings</CardTitle>
+                    <CardDescription>Manage the Google AI (Gemini) API key for the application.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="api-key">Gemini API Key</Label>
+                        <Input 
+                            id="api-key" 
+                            type="password" 
+                            value={apiKey} 
+                            onChange={(e) => setApiKey(e.target.value)} 
+                            placeholder="Enter your Google AI API Key"
+                        />
+                         <p className="text-sm text-muted-foreground">
+                            This key is stored in your browser's local storage and is used for all AI interactions.
+                        </p>
+                    </div>
+                    <Button onClick={handleSaveApiKey}>Save API Key</Button>
+                </CardContent>
+            </Card>
+        </TabsContent>
+
       </Tabs>
 
       <UserEditDialog 
@@ -379,5 +413,3 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     </div>
   );
 }
-
-    

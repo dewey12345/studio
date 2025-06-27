@@ -8,3 +8,5 @@ export const ROUND_STATE_KEY = 'color_clash_round_state';
 export const GLOBAL_ROUND_HISTORY_KEY = 'color_clash_global_round_history';
 
 export const GAME_SETTINGS_KEY = 'color_clash_game_settings';
+
+export const API_KEY_KEY = 'color_clash_api_key';

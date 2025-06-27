@@ -12,6 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescript
 import { History, Palette, Wallet, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { authService } from '@/lib/auth';
+import { apiKeyService } from '@/lib/apiKeyService';
 import { getNumberDetails, getPayout, NUMBER_CONFIG } from '@/lib/game-logic';
 import { GAME_SETTINGS_KEY, GLOBAL_ROUND_HISTORY_KEY, ROUND_STATE_KEY } from '@/lib/constants';
 import Leaderboard from './leaderboard';
@@ -136,16 +137,18 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     if (gameSettings.manualWinner !== undefined && gameSettings.manualWinner !== null) {
         winningNumber = gameSettings.manualWinner;
     } else {
+      const apiKey = apiKeyService.getApiKey();
       try {
         const result = await aiDetermineWinner({
           bets: currentState.bets,
           difficulty: gameSettings.difficulty,
+          apiKey: apiKey || undefined,
         });
         winningNumber = result.winningNumber;
-      } catch (error) {
+      } catch (error: any) {
         console.error("AI failed to select a winner:", error);
         if (user.role === 'admin') {
-            toast({ title: "AI Error", description: "Could not determine winner, selecting randomly.", variant: "destructive" });
+            toast({ title: "AI Error", description: `Could not determine winner: ${error.message}. Selecting randomly.`, variant: "destructive", duration: 5000 });
         }
         winningNumber = Math.floor(Math.random() * 10);
       }
@@ -552,5 +555,3 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     </div>
   );
 }
-
-    
