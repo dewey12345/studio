@@ -120,7 +120,9 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
         winningNumber = result.winningNumber;
       } catch (error) {
         console.error("AI failed to select a winner:", error);
-        toast({ title: "AI Error", description: "Could not determine winner, selecting randomly.", variant: "destructive" });
+        if (user.role === 'admin') {
+            toast({ title: "AI Error", description: "Could not determine winner, selecting randomly.", variant: "destructive" });
+        }
         winningNumber = Math.floor(Math.random() * 10);
       }
     }
@@ -195,7 +197,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     const finalState = { ...currentState, winningNumber };
     localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(finalState));
     setRoundState(finalState);
-  }, [isProcessingEnd, roundState?.id, user.id, toast, onUserUpdate]);
+  }, [isProcessingEnd, roundState?.id, user.id, user.role, toast, onUserUpdate]);
 
 
   useEffect(() => {
