@@ -1,10 +1,14 @@
 import Link from 'next/link';
 import { Separator } from './ui/separator';
+import { Logo } from './logo';
 
 export default function Footer() {
   return (
     <footer className="mt-auto border-t">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 text-center text-muted-foreground text-sm">
+        <div className="flex justify-center mb-4">
+          <Logo className="h-12 w-auto" />
+        </div>
         <div className="flex justify-center gap-4 mb-4">
           <Link href="/terms" className="hover:underline">Terms & Conditions</Link>
           <Separator orientation="vertical" className="h-5" />
