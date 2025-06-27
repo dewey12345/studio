@@ -171,25 +171,29 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
 
     // For the current user's local history and dialog box
     const userBets = currentState.bets.filter(b => b.userId === user.id);
-    const userTotalPayout = totalPayouts.get(user.id) || 0;
-    const userBetsWithPayouts = userBets.map(bet => ({
-        ...bet,
-        payout: getPayout(bet, winningNumber)
-    }));
+    
+    // ONLY update history and show dialog if the user participated in the round.
+    if (userBets.length > 0) {
+      const userTotalPayout = totalPayouts.get(user.id) || 0;
+      const userBetsWithPayouts = userBets.map(bet => ({
+          ...bet,
+          payout: getPayout(bet, winningNumber)
+      }));
 
-    const userRoundResult: RoundResult = {
-        id: currentState.id,
-        winningNumber: winningNumber,
-        bets: userBetsWithPayouts,
-        totalPayout: userTotalPayout
-    };
+      const userRoundResult: RoundResult = {
+          id: currentState.id,
+          winningNumber: winningNumber,
+          bets: userBetsWithPayouts,
+          totalPayout: userTotalPayout
+      };
 
-    setBetHistory(prev => [userRoundResult, ...prev].slice(0, 50));
+      setBetHistory(prev => [userRoundResult, ...prev].slice(0, 50));
+      setShowResultDialog(true);
+    }
     
     const finalState = { ...currentState, winningNumber };
     localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(finalState));
     setRoundState(finalState);
-    setShowResultDialog(true);
   }, [isProcessingEnd, roundState?.id, user.id, toast, onUserUpdate]);
 
 
@@ -315,8 +319,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     <div className="space-y-6">
       <header className="flex flex-col sm:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-3">
-          <Palette className="h-8 w-8 text-primary" />
-          <h1 className="text-3xl font-bold font-headline">Game Lobby</h1>
+          <Logo className="h-8 w-auto" />
         </div>
         <Card className="min-w-[200px]">
           <CardHeader className="flex flex-row items-center justify-between p-3 space-y-0">
