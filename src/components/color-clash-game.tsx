@@ -389,9 +389,9 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
       
         <Tabs defaultValue="color" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="color">Color</TabsTrigger>
-                <TabsTrigger value="number">Number</TabsTrigger>
-                <TabsTrigger value="size">Big/Small</TabsTrigger>
+                <TabsTrigger value="color" disabled={hasBetOnColor}>Color</TabsTrigger>
+                <TabsTrigger value="number" disabled={hasBetOnNumber}>Number</TabsTrigger>
+                <TabsTrigger value="size" disabled={hasBetOnBigSmall}>Big/Small</TabsTrigger>
             </TabsList>
             <TabsContent value="color" className="mt-4">
                 <div className="grid grid-cols-3 gap-2 sm:gap-4">
@@ -415,7 +415,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                         )
                     })}
                 </div>
-                <Button onClick={placeSelectedNumberBets} disabled={hasBetOnNumber} className="w-full mt-4">Bet on Selected Numbers</Button>
+                <Button onClick={placeSelectedNumberBets} disabled={hasBetOnNumber || selectedNumbers.length === 0} className="w-full mt-4">Bet on Selected Numbers</Button>
             </TabsContent>
             <TabsContent value="size" className="mt-4">
                  <div className="grid grid-cols-2 gap-2 sm:gap-4">
@@ -471,9 +471,6 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                         const details = getNumberDetails(result.winningNumber);
                         const totalBetAmount = result.bets.reduce((sum, bet) => sum + bet.amount, 0);
                         const netResult = result.totalPayout - totalBetAmount;
-                        const betsSummary = result.bets.length > 0 
-                        ? result.bets.map(b => `${b.value} (₹${b.amount.toFixed(0)})`).join(', ') 
-                        : 'No Bet';
 
                         return (
                         <TableRow key={result.id}>
@@ -487,7 +484,25 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                                     </div>
                                 </div>
                             </TableCell>
-                            <TableCell className="max-w-[150px] truncate text-xs">{betsSummary}</TableCell>
+                            <TableCell className="text-xs">
+                                {result.bets.length > 0 ? (
+                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                        {result.bets.map((bet, index) => {
+                                            const isWin = (bet.payout || 0) > 0;
+                                            return (
+                                                <span key={index} className={cn(
+                                                    'font-semibold px-1.5 py-0.5 rounded',
+                                                    isWin ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                                                )}>
+                                                    {bet.value} (₹{bet.amount.toFixed(0)})
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <span>No Bet</span>
+                                )}
+                            </TableCell>
                             <TableCell className={`text-right font-mono font-semibold ${netResult >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                 {netResult >= 0 ? `+₹${netResult.toFixed(2)}` : `-₹${Math.abs(netResult).toFixed(2)}`}
                             </TableCell>
@@ -518,19 +533,19 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
             <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
                 {lastResult.bets.map((bet, index) => {
                     const payout = getPayout(bet, lastResult.winningNumber);
-                    const win = payout > 0;
+                    const isWin = payout > 0;
                     const profit = payout - bet.amount;
                     return (
                         <div key={index} className={cn(
                             "flex justify-between items-center text-sm p-3 rounded-md",
-                            win ? 'bg-green-900/50 text-white' : 'bg-red-900/50 text-white'
+                            isWin ? 'bg-green-900/50 text-white' : 'bg-red-900/50 text-white'
                         )}>
                             <span>Bet on {bet.type} ({bet.value}) for <span className="font-bold">₹{bet.amount.toFixed(2)}</span></span>
                             <span className={cn(
                                 "font-bold text-base",
-                                win ? 'text-green-400' : 'text-red-400'
+                                isWin ? 'text-green-400' : 'text-red-400'
                             )}>
-                                {win ? `+ ₹${profit.toFixed(2)}` : `- ₹${bet.amount.toFixed(2)}`}
+                                {isWin ? `+ ₹${profit.toFixed(2)}` : `- ₹${bet.amount.toFixed(2)}`}
                             </span>
                         </div>
                     );
