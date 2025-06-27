@@ -18,6 +18,7 @@ import { GAME_SETTINGS_KEY, GLOBAL_ROUND_HISTORY_KEY, ROUND_STATE_KEY } from '@/
 import Leaderboard from './leaderboard';
 import { Input } from './ui/input';
 import { Logo } from './logo';
+import Confetti from 'react-confetti';
 
 const ROUND_DURATION = 30;
 const POST_ROUND_DELAY = 5;
@@ -48,6 +49,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   const [isProcessingEnd, setIsProcessingEnd] = useState(false);
   const [showResultDialog, setShowResultDialog] = useState(false);
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
+  const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
 
   const { toast } = useToast();
 
@@ -71,6 +73,20 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     }).filter(round => round.bets.length > 0); 
     setBetHistory(userHistory.slice(0, 50));
   }, [user.id]);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      if (typeof window !== 'undefined') {
+        setWindowSize({
+          width: window.innerWidth,
+          height: window.innerHeight,
+        });
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const startNewRound = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -161,7 +177,6 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
         authService.updateMultipleUsers(updatedUsers);
     }
     
-    // Create a single, definitive result for this round for global history
     const roundBetsWithPayouts = currentState.bets.map(bet => ({
         ...bet,
         payout: getPayout(bet, winningNumber)
@@ -177,10 +192,8 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     globalHistory.unshift(globalRoundResult);
     localStorage.setItem(GLOBAL_ROUND_HISTORY_KEY, JSON.stringify(globalHistory.slice(0, 50)));
 
-    // For the current user's local history and dialog box
     const userBets = currentState.bets.filter(b => b.userId === user.id);
     
-    // ONLY update history and show dialog if the user participated in the round.
     if (userBets.length > 0) {
       const userTotalPayout = totalPayouts.get(user.id) || 0;
       const userBetsWithPayouts = userBets.map(bet => ({
@@ -322,6 +335,8 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   }
   
   const lastResult = betHistory[0];
+  const netResult = lastResult ? lastResult.totalPayout - lastResult.bets.reduce((s, b) => s + b.amount, 0) : 0;
+  const isOverallWin = lastResult && netResult > 0;
 
   const hasBetOnColor = (color: string) => currentUserBets.some(b => b.type === 'Color' && b.value === color);
   const hasBetOnNumber = (num: number) => currentUserBets.some(b => b.type === 'Number' && b.value === num);
@@ -483,49 +498,54 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
           </Card>
 
       <AlertDialog open={showResultDialog} onOpenChange={setShowResultDialog}>
+        {isOverallWin && <Confetti width={windowSize.width} height={windowSize.height} recycle={false} numberOfPieces={200} />}
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Round Over!</AlertDialogTitle>
-            {lastResult && (
-                 <div>
-                    <p className="text-lg">
-                        Winning Number: <span className="font-bold text-2xl text-accent">{lastResult.winningNumber}</span>
-                    </p>
-                    <div className="mt-4 space-y-2">
-                        <h4 className="font-semibold">Your Results:</h4>
-                        {lastResult.bets.length > 0 ? (
-                            lastResult.bets.map((bet, index) => {
-                                const payout = getPayout(bet, lastResult.winningNumber);
-                                const win = payout > 0;
-                                return (
-                                    <div key={index} className="flex justify-between items-center text-sm p-2 bg-secondary rounded-md">
-                                        <span>Bet on {bet.type} ({bet.value}) for ${bet.amount.toFixed(2)}</span>
-                                        <span className={win ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
-                                            {win ? `+ $${payout.toFixed(2)}` : `- $${bet.amount.toFixed(2)}`}
-                                        </span>
-                                    </div>
-                                );
-                            })
-                        ) : (
-                            <p className="text-sm text-muted-foreground">You didn't place any bets this round.</p>
-                        )}
-                    </div>
-                    {lastResult.bets.length > 0 && (
-                        <>
-                         <hr className="my-4 border-border"/>
-                         <p className="text-right font-bold text-lg">
-                             Total Net: 
-                             <span className={lastResult.totalPayout - lastResult.bets.reduce((s, b) => s + b.amount, 0) >= 0 ? 'text-green-400' : 'text-red-400'}>
-                                 {` $${(lastResult.totalPayout - lastResult.bets.reduce((s, b) => s + b.amount, 0)).toFixed(2)}`}
-                             </span>
-                         </p>
-                        </>
-                    )}
-                </div>
-            )}
+            <AlertDialogTitle className="text-center text-2xl">
+              {isOverallWin ? 'Congratulations!' : 'Better Luck Next Time!'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-center">
+              The winning number was <span className="font-bold text-lg text-accent">{lastResult?.winningNumber}</span>.
+              Here's how you did.
+            </AlertDialogDescription>
           </AlertDialogHeader>
+
+          {lastResult && (
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                {lastResult.bets.map((bet, index) => {
+                    const payout = getPayout(bet, lastResult.winningNumber);
+                    const win = payout > 0;
+                    return (
+                        <div key={index} className={cn(
+                            "flex justify-between items-center text-sm p-3 rounded-md",
+                            win ? 'bg-green-900/50 text-white' : 'bg-red-900/50 text-white'
+                        )}>
+                            <span>Bet on {bet.type} ({bet.value}) for <span className="font-bold">${bet.amount.toFixed(2)}</span></span>
+                            <span className={cn(
+                                "font-bold text-base",
+                                win ? 'text-green-400' : 'text-red-400'
+                            )}>
+                                {win ? `+ $${payout.toFixed(2)}` : `- $${bet.amount.toFixed(2)}`}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+          )}
+
+          {lastResult && (
+            <div className="mt-4 pt-4 border-t border-border">
+                <p className="text-right font-bold text-xl">
+                    Total Net: 
+                    <span className={netResult >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      {netResult >= 0 ? ` +$${netResult.toFixed(2)}` : ` -$${Math.abs(netResult).toFixed(2)}`}
+                    </span>
+                </p>
+            </div>
+          )}
+          
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowResultDialog(false)}>
+            <AlertDialogAction onClick={() => setShowResultDialog(false)} className="w-full">
               Continue
             </AlertDialogAction>
           </AlertDialogFooter>
