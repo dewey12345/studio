@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useForm } from 'react-hook-form';
@@ -20,6 +21,7 @@ interface UserEditDialogProps {
 
 const editUserSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
+  phone: z.string().min(10, "Phone must be at least 10 digits.").optional().or(z.literal('')),
   password: z.string().min(6, 'Password must be at least 6 characters.').optional().or(z.literal('')),
   role: z.enum(['admin', 'user']),
   balance: z.coerce.number().min(0, 'Balance cannot be negative.'),
@@ -36,6 +38,7 @@ export function UserEditDialog({ isOpen, onOpenChange, onSave, user }: UserEditD
     if (user) {
       form.reset({
         email: user.email,
+        phone: user.phone || '',
         password: '',
         role: user.role,
         balance: user.balance,
@@ -43,6 +46,7 @@ export function UserEditDialog({ isOpen, onOpenChange, onSave, user }: UserEditD
     } else {
       form.reset({
         email: '',
+        phone: '',
         password: '',
         role: 'user',
         balance: 1000,
@@ -77,6 +81,19 @@ export function UserEditDialog({ isOpen, onOpenChange, onSave, user }: UserEditD
                   <FormLabel>Email</FormLabel>
                   <FormControl>
                     <Input placeholder="name@example.com" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="phone"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Phone Number</FormLabel>
+                  <FormControl>
+                    <Input placeholder="1234567890" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

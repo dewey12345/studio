@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useForm } from 'react-hook-form';
@@ -17,6 +18,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 
 const registerSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
+  phone: z.string().min(10, { message: 'Phone number must be at least 10 digits.' }).optional().or(z.literal('')),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
   terms: z.literal(true, {
     errorMap: () => ({ message: 'You must be 21+ and accept the terms and conditions to continue.' }),
@@ -32,6 +34,7 @@ export default function RegisterPage() {
     resolver: zodResolver(registerSchema),
     defaultValues: {
       email: '',
+      phone: '',
       password: '',
       terms: false,
     },
@@ -39,7 +42,7 @@ export default function RegisterPage() {
 
   const onSubmit = (data: RegisterFormValues) => {
     try {
-      authService.register(data.email, data.password);
+      authService.register(data.email, data.password, data.phone || undefined);
       toast({ title: 'Success', description: 'Account created successfully. Please log in.' });
       router.push('/');
     } catch (error: any) {
@@ -57,7 +60,7 @@ export default function RegisterPage() {
         <CardHeader className="text-center space-y-4">
             <Logo className="h-16 w-auto mx-auto" />
             <CardTitle className="text-2xl pt-2">Create an Account</CardTitle>
-            <CardDescription>Enter your email and password to begin</CardDescription>
+            <CardDescription>Enter your details to begin</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -70,6 +73,19 @@ export default function RegisterPage() {
                     <FormLabel>Email</FormLabel>
                     <FormControl>
                       <Input placeholder="name@example.com" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone Number (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="1234567890" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

@@ -311,7 +311,14 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     const newBalance = balance - finalBetAmount;
     setBalance(newBalance);
 
-    const newBet: SyncedBet = { type, value, amount: finalBetAmount, userId: user.id, timestamp: Date.now() };
+    const newBet: SyncedBet = { 
+        type, 
+        value, 
+        amount: finalBetAmount, 
+        userId: user.id, 
+        timestamp: Date.now(),
+        userAgent: navigator.userAgent
+    };
     const currentState = JSON.parse(localStorage.getItem(ROUND_STATE_KEY)!) as RoundState;
     const newState = { ...currentState, bets: [...currentState.bets, newBet] };
     localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(newState));

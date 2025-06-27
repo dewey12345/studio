@@ -11,6 +11,7 @@ export interface Bet {
   payout?: number;
   userId: string;
   timestamp: number;
+  userAgent?: string;
 }
 
 export interface RoundResult {
@@ -25,8 +26,9 @@ export type Totals = {
 };
 
 export interface User {
-  id: string;
+  id:string;
   email: string;
+  phone?: string;
   password?: string;
   role: 'admin' | 'user';
   balance: number;

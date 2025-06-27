@@ -1,3 +1,4 @@
+
 // NOTE: This is a mock authentication service for demonstration purposes.
 // It uses localStorage and is not secure for production environments.
 'use client';
@@ -14,8 +15,8 @@ const getStoredUsers = (): User[] => {
     return JSON.parse(usersJson);
   }
   // Create a default admin user if none exist
-  const adminUser: User = { id: 'admin_user_01', email: 'imblaster2019@gmail.com', password: 'password', role: 'admin', balance: 99999 };
-  const regularUser: User = { id: 'regular_user_01', email: 'user@example.com', password: 'password', role: 'user', balance: 1000 };
+  const adminUser: User = { id: 'admin_user_01', email: 'imblaster2019@gmail.com', phone: '1234567890', password: 'password', role: 'admin', balance: 99999 };
+  const regularUser: User = { id: 'regular_user_01', email: 'user@example.com', phone: '0987654321', password: 'password', role: 'user', balance: 1000 };
   localStorage.setItem(USERS_KEY, JSON.stringify([adminUser, regularUser]));
   
   // Also set a default API key if none exists
@@ -47,14 +48,18 @@ const storeCurrentUser = (user: User | null) => {
 
 
 export const authService = {
-  register: (email: string, password_raw: string): User => {
+  register: (email: string, password_raw: string, phone?: string): User => {
     const users = getStoredUsers();
     if (users.find(u => u.email === email)) {
       throw new Error('User with this email already exists.');
     }
+    if (phone && users.find(u => u.phone === phone)) {
+      throw new Error('User with this phone number already exists.');
+    }
     const newUser: User = {
       id: uuidv4(),
       email,
+      phone,
       password: password_raw, // In a real app, you would hash this
       role: 'user',
       balance: 1000, // Starting balance for new users
@@ -64,11 +69,11 @@ export const authService = {
     return newUser;
   },
 
-  login: (email: string, password_raw: string): User => {
+  login: (credential: string, password_raw: string): User => {
     const users = getStoredUsers();
-    const user = users.find(u => u.email === email);
+    const user = users.find(u => (u.email === credential || u.phone === credential));
     if (!user || user.password !== password_raw) { // In a real app, compare hashed passwords
-      throw new Error('Invalid email or password.');
+      throw new Error('Invalid credentials or password.');
     }
     storeCurrentUser(user);
     return user;
@@ -129,6 +134,10 @@ export const authService = {
     if (data.email && users.some(u => u.email === data.email && u.id !== id)) {
       throw new Error("Email is already in use by another account.");
     }
+
+    if (data.phone && users.some(u => u.phone === data.phone && u.id !== id)) {
+      throw new Error("Phone number is already in use by another account.");
+    }
     
     const updatedUser = { 
       ...users[userIndex], 
@@ -179,6 +188,9 @@ export const authService = {
     let users = getStoredUsers();
     if (users.some(u => u.email === data.email)) {
       throw new Error("User with this email already exists.");
+    }
+    if (data.phone && users.some(u => u.phone === data.phone)) {
+      throw new Error("User with this phone number already exists.");
     }
     const newUser: User = {
       id: uuidv4(),

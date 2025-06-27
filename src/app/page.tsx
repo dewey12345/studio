@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useForm } from 'react-hook-form';
@@ -15,7 +16,7 @@ import { authService } from '@/lib/auth';
 import { Logo } from '@/components/logo';
 
 const loginSchema = z.object({
-  email: z.string().email({ message: 'Invalid email address.' }),
+  credential: z.string().min(1, { message: 'Email or Phone Number is required.' }),
   password: z.string().min(1, { message: 'Password is required.' }),
 });
 
@@ -27,14 +28,14 @@ export default function LoginPage() {
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: '',
+      credential: '',
       password: '',
     },
   });
 
   const onSubmit = (data: LoginFormValues) => {
     try {
-      const user = authService.login(data.email, data.password);
+      const user = authService.login(data.credential, data.password);
       toast({ title: 'Success', description: 'Logged in successfully.' });
       if (user.role === 'admin') {
         router.push('/admin');
@@ -62,12 +63,12 @@ export default function LoginPage() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
                 control={form.control}
-                name="email"
+                name="credential"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>Email or Phone Number</FormLabel>
                     <FormControl>
-                      <Input placeholder="name@example.com" {...field} />
+                      <Input placeholder="name@example.com or 1234567890" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

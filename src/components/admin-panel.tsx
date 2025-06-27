@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,78 +9,120 @@ import { authService } from '@/lib/auth';
 import { supportService } from '@/lib/supportService';
 import { withdrawalService } from '@/lib/withdrawService';
 import { apiKeyService } from '@/lib/apiKeyService';
-import type { User, SupportTicket, WithdrawalRequest, GameSettings, LeaderboardEntry } from '@/lib/types';
+import type { User, SupportTicket, WithdrawalRequest, GameSettings, Bet, RoundResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { Users, KeyRound, PlusCircle, Edit, Trash2, Shield, LifeBuoy, Banknote, Trophy, Gamepad2, Settings, CloudCog } from 'lucide-react';
+import { Users, KeyRound, PlusCircle, Edit, Trash2, Shield, LifeBuoy, Banknote, Trophy, Gamepad2, Settings, CloudCog, History, CircleDotDashed } from 'lucide-react';
 import { UserEditDialog } from './user-edit-dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { getNumberDetails } from '@/lib/game-logic';
-import { GAME_SETTINGS_KEY, ROUND_HISTORY_KEY } from '@/lib/constants';
+import { GAME_SETTINGS_KEY, ROUND_STATE_KEY, GLOBAL_ROUND_HISTORY_KEY } from '@/lib/constants';
 import Leaderboard from './leaderboard';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from './ui/scroll-area';
 
 interface AdminPanelProps {
   adminUser: User;
 }
 
-const updateSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6, { message: 'New password must be at least 6 characters.' }).optional().or(z.literal('')),
-});
+type SyncedBet = Bet & { userId: string };
 
-type UpdateFormValues = z.infer<typeof updateSchema>;
-type UserForTable = Omit<User, 'password'>;
+type EnrichedBet = Bet & {
+    userEmail: string;
+    userPhone?: string;
+    roundId: string;
+    winningNumber?: number;
+};
 
 
 export default function AdminPanel({ adminUser }: AdminPanelProps) {
-  const [users, setUsers] = useState<UserForTable[]>([]);
+  const [users, setUsers] = useState<(User)[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<UserForTable | null>(null);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [gameSettings, setGameSettings] = useState<GameSettings>({ difficulty: 'easy' });
   const [predictionNumber, setPredictionNumber] = useState<string>('');
   const [apiKey, setApiKey] = useState('');
   
+  const [liveBets, setLiveBets] = useState<SyncedBet[]>([]);
+  const [historicalBets, setHistoricalBets] = useState<EnrichedBet[]>([]);
+  const [historySearchTerm, setHistorySearchTerm] = useState('');
+
   const { toast } = useToast();
 
   const loadData = useCallback(() => {
-    setUsers(authService.getUsers());
+    const allUsers = authService.getUsers(true) as User[];
+    setUsers(allUsers);
     setSupportTickets(supportService.getAllTickets());
     setWithdrawalRequests(withdrawalService.getAllRequests());
     const settings = localStorage.getItem(GAME_SETTINGS_KEY);
     if(settings) setGameSettings(JSON.parse(settings));
     setApiKey(apiKeyService.getApiKey() || '');
+    
+    // Load betting history
+    const roundHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
+    const userMap = new Map(allUsers.map(u => [u.id, u]));
+    const allBets: EnrichedBet[] = [];
+    roundHistory.forEach(round => {
+        round.bets.forEach(bet => {
+            const user = userMap.get(bet.userId);
+            allBets.push({
+                ...bet,
+                userEmail: user?.email || 'Unknown',
+                userPhone: user?.phone,
+                roundId: round.id,
+                winningNumber: round.winningNumber
+            });
+        });
+    });
+    setHistoricalBets(allBets);
+
   }, []);
 
   useEffect(() => {
     loadData();
     window.addEventListener('storage', loadData);
+    
+    const liveBetInterval = setInterval(() => {
+        const roundStateRaw = localStorage.getItem(ROUND_STATE_KEY);
+        if (roundStateRaw) {
+            const roundState = JSON.parse(roundStateRaw);
+            setLiveBets(roundState.bets || []);
+        }
+    }, 2000);
+
     return () => {
         window.removeEventListener('storage', loadData);
+        clearInterval(liveBetInterval);
     };
   }, [loadData]);
 
-  const form = useForm<UpdateFormValues>({
-    resolver: zodResolver(updateSchema),
-    defaultValues: {
-      email: adminUser.email,
-      password: '',
-    },
-  });
+
+  const filteredHistoricalBets = useMemo(() => {
+    if (!historySearchTerm) {
+      return historicalBets;
+    }
+    return historicalBets.filter(bet => 
+        bet.userEmail.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
+        (bet.userPhone && bet.userPhone.includes(historySearchTerm))
+    );
+  }, [historicalBets, historySearchTerm]);
+
+  const totalBetAmount = useMemo(() => {
+    return filteredHistoricalBets.reduce((sum, bet) => sum + bet.amount, 0);
+  }, [filteredHistoricalBets]);
+
 
   const onAdminSubmit = (data: UpdateFormValues) => {
     try {
       authService.updateUser(adminUser.id, data.email, data.password || undefined);
       toast({ title: 'Success', description: 'Your credentials have been updated.' });
-      form.reset({ ...form.getValues(), password: '' });
     } catch (error: any) {
       toast({ title: 'Update Failed', description: error.message, variant: 'destructive' });
     }
@@ -91,7 +133,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     setIsDialogOpen(true);
   };
   
-  const handleEditUser = (user: UserForTable) => {
+  const handleEditUser = (user: User) => {
     setEditingUser(user);
     setIsDialogOpen(true);
   };
@@ -171,20 +213,27 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     apiKeyService.setApiKey(apiKey);
     toast({ title: "Success", description: "API Key has been saved." });
   }
+  
+  const userMap = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
 
   return (
     <div className="space-y-8">
       <h1 className="text-3xl font-bold flex items-center gap-2"><Shield /> Admin Dashboard</h1>
 
-      <Tabs defaultValue="users">
-        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 md:grid-cols-6 h-auto">
-          <TabsTrigger value="users"><Users />User Management</TabsTrigger>
-          <TabsTrigger value="withdrawals"><Banknote/>Withdrawals</TabsTrigger>
-          <TabsTrigger value="support"><LifeBuoy/>Support</TabsTrigger>
-          <TabsTrigger value="leaderboard"><Trophy/>Leaderboard</TabsTrigger>
-          <TabsTrigger value="game"><Gamepad2/>Game Control</TabsTrigger>
-          <TabsTrigger value="api"><CloudCog/>API Settings</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="users" className="w-full">
+        <ScrollArea className="w-full pb-2">
+            <TabsList className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 h-auto w-max">
+            <TabsTrigger value="users"><Users />User Management</TabsTrigger>
+            <TabsTrigger value="withdrawals"><Banknote/>Withdrawals</TabsTrigger>
+            <TabsTrigger value="support"><LifeBuoy/>Support</TabsTrigger>
+            <TabsTrigger value="leaderboard"><Trophy/>Leaderboard</TabsTrigger>
+            <TabsTrigger value="live"><CircleDotDashed />Live Bets</TabsTrigger>
+            <TabsTrigger value="history"><History />Bet History</TabsTrigger>
+            <TabsTrigger value="game"><Gamepad2/>Game Control</TabsTrigger>
+            <TabsTrigger value="api"><CloudCog/>API Settings</TabsTrigger>
+            </TabsList>
+        </ScrollArea>
+        
 
         <TabsContent value="users" className="mt-6">
             <Card>
@@ -200,6 +249,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
                     <TableHeader>
                     <TableRow>
                         <TableHead>Email</TableHead>
+                        <TableHead>Phone</TableHead>
                         <TableHead>Balance</TableHead>
                         <TableHead>Role</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
@@ -209,6 +259,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
                     {users.map(user => (
                         <TableRow key={user.id}>
                         <TableCell>{user.email}</TableCell>
+                        <TableCell>{user.phone || 'N/A'}</TableCell>
                         <TableCell>₹{user.balance.toFixed(2)}</TableCell>
                         <TableCell>
                             <span className={`px-2 py-1 rounded-full text-xs ${user.role === 'admin' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground'}`}>
@@ -336,6 +387,102 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
                         )) : <TableRow><TableCell colSpan={6} className="text-center">No support tickets.</TableCell></TableRow>}
                         </TableBody>
                     </Table>
+                </CardContent>
+            </Card>
+        </TabsContent>
+        
+        <TabsContent value="live" className="mt-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><CircleDotDashed />Live Round Bets</CardTitle>
+                    <CardDescription>Bets placed in the current round. Updates every 2 seconds.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Time</TableHead>
+                                <TableHead>User</TableHead>
+                                <TableHead>Phone</TableHead>
+                                <TableHead>Bet Type</TableHead>
+                                <TableHead>Bet Value</TableHead>
+                                <TableHead className="text-right">Amount</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {liveBets.length > 0 ? liveBets.map((bet) => {
+                                const user = userMap.get(bet.userId);
+                                return (
+                                <TableRow key={bet.timestamp}>
+                                    <TableCell>{new Date(bet.timestamp).toLocaleTimeString()}</TableCell>
+                                    <TableCell>{user?.email || 'N/A'}</TableCell>
+                                    <TableCell>{user?.phone || 'N/A'}</TableCell>
+                                    <TableCell>{bet.type}</TableCell>
+                                    <TableCell>{bet.value}</TableCell>
+                                    <TableCell className="text-right">₹{bet.amount.toFixed(2)}</TableCell>
+                                </TableRow>
+                                )
+                            }) : (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="text-center">No bets placed in this round yet.</TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><History />Betting History</CardTitle>
+                    <CardDescription>Search and view all historical bets placed by users.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="flex justify-between items-center">
+                        <Input 
+                            placeholder="Search by email or phone..."
+                            value={historySearchTerm}
+                            onChange={(e) => setHistorySearchTerm(e.target.value)}
+                            className="max-w-sm"
+                        />
+                        <div className="text-right">
+                            <div className="text-sm font-bold">Total Bet Amount</div>
+                            <div className="text-lg font-mono">₹{totalBetAmount.toFixed(2)}</div>
+                        </div>
+                    </div>
+                    <ScrollArea className="h-[600px] w-full">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Time</TableHead>
+                                    <TableHead>User</TableHead>
+                                    <TableHead>Bet</TableHead>
+                                    <TableHead>Amount</TableHead>
+                                    <TableHead>User Agent</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {filteredHistoricalBets.length > 0 ? filteredHistoricalBets.map((bet, index) => (
+                                    <TableRow key={`${bet.roundId}-${index}`}>
+                                        <TableCell>{new Date(bet.timestamp).toLocaleString()}</TableCell>
+                                        <TableCell>
+                                            <div>{bet.userEmail}</div>
+                                            <div className="text-xs text-muted-foreground">{bet.userPhone}</div>
+                                        </TableCell>
+                                        <TableCell>{bet.type} on {bet.value}</TableCell>
+                                        <TableCell>₹{bet.amount.toFixed(2)}</TableCell>
+                                        <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">{bet.userAgent || 'N/A'}</TableCell>
+                                    </TableRow>
+                                )) : (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="text-center">No betting history found.</TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </ScrollArea>
                 </CardContent>
             </Card>
         </TabsContent>
