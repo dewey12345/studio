@@ -41,8 +41,7 @@ export default function Header() {
     <header className="border-b">
       <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href={user ? '/dashboard' : '/'} className="flex items-center gap-2">
-          <Logo className="h-8 w-8" />
-          <span className="font-bold text-lg">Color Clash</span>
+          <Logo className="h-8 w-auto" />
         </Link>
         <nav className="flex items-center gap-2 md:gap-4">
           {user ? (

@@ -53,11 +53,8 @@ export default function LoginPage() {
   return (
     <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
       <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-            <div className="flex justify-center items-center gap-3 mb-2">
-                <Logo className="h-10 w-10" />
-                <CardTitle className="text-3xl">Color Clash</CardTitle>
-            </div>
+        <CardHeader className="text-center space-y-4">
+          <Logo className="h-16 w-auto mx-auto" />
           <CardDescription>Enter your credentials to access your account</CardDescription>
         </CardHeader>
         <CardContent>
