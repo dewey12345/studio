@@ -332,7 +332,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
         </TabsContent>
 
         <TabsContent value="leaderboard" className="mt-6">
-            <Leaderboard />
+            <Leaderboard isAdminView={true} />
         </TabsContent>
 
         <TabsContent value="game" className="mt-6">

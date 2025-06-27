@@ -461,7 +461,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                     </Table>
                 </TabsContent>
                 <TabsContent value="leaderboard">
-                  <Leaderboard/>
+                  <Leaderboard isAdminView={user.role === 'admin'} />
                 </TabsContent>
               </CardContent>
             </Tabs>

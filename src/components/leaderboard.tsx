@@ -10,7 +10,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Medal, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export default function Leaderboard() {
+function maskEmail(email: string): string {
+    const atIndex = email.lastIndexOf('@');
+    if (atIndex < 1) return email; // Not a valid email format, return as-is
+
+    const localPart = email.substring(0, atIndex);
+    const domain = email.substring(atIndex);
+
+    if (localPart.length <= 4) {
+        return `${localPart.slice(0, 1)}***${localPart.slice(-1)}${domain}`;
+    }
+
+    return `${localPart.slice(0, 2)}${'*'.repeat(localPart.length - 4)}${localPart.slice(-2)}${domain}`;
+}
+
+interface LeaderboardProps {
+  isAdminView?: boolean;
+}
+
+export default function Leaderboard({ isAdminView = false }: LeaderboardProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   const calculateLeaderboard = useCallback(() => {
@@ -76,6 +94,7 @@ export default function Leaderboard() {
             {leaderboard.length > 0 ? (
               leaderboard.map((entry, index) => {
                 const rank = index + 1;
+                const displayName = isAdminView ? entry.userName : maskEmail(entry.userName);
                 
                 return (
                   <TableRow key={entry.userId} className={cn(
@@ -91,7 +110,7 @@ export default function Leaderboard() {
                             <span>{rank}</span>
                         </div>
                     </TableCell>
-                    <TableCell>{entry.userName}</TableCell>
+                    <TableCell>{displayName}</TableCell>
                     <TableCell className={`text-right font-mono font-semibold ${entry.totalWinnings >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       ${entry.totalWinnings.toFixed(2)}
                     </TableCell>
