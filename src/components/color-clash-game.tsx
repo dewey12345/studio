@@ -7,7 +7,6 @@ import type { Bet, RoundResult, User, GameSettings, BetType } from '@/lib/types'
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { History, Palette, Wallet, Trophy } from 'lucide-react';
@@ -48,7 +47,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   const [betHistory, setBetHistory] = useState<RoundResult[]>([]);
   const [isProcessingEnd, setIsProcessingEnd] = useState(false);
   const [showResultDialog, setShowResultDialog] = useState(false);
-  const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
+  const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
 
   const { toast } = useToast();
@@ -116,7 +115,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     setRoundState(newRoundState);
     setIsProcessingEnd(false);
     setShowResultDialog(false);
-    setSelectedNumbers([]);
+    setSelectedNumber(null);
   }, []);
 
   const handleRoundEnd = useCallback(async () => {
@@ -314,33 +313,21 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
 
   const handleNumberSelect = (num: number) => {
     if (hasBetOnNumber) return;
-    setSelectedNumbers(prev => prev.includes(num) ? prev.filter(n => n !== num) : [...prev, num]);
+    setSelectedNumber(prev => prev === num ? null : num);
   }
 
-  const placeSelectedNumberBets = () => {
+  const placeSelectedNumberBet = () => {
     if (hasBetOnNumber) {
         toast({ title: "Already Bet", description: "You have already placed a Number bet this round.", variant: "destructive" });
         return;
     }
-    if (selectedNumbers.length === 0) {
-        toast({ title: "No Numbers Selected", description: "Please select one or more numbers to bet on.", variant: "destructive" });
+    if (selectedNumber === null) {
+        toast({ title: "No Number Selected", description: "Please select a number to bet on.", variant: "destructive" });
         return;
     }
     
-    if (betAmount <= 0) {
-      toast({ title: "Invalid Amount", description: "Bet amount must be greater than zero.", variant: "destructive" });
-      return;
-    }
-    const totalBetCost = betAmount * betMultiplier * selectedNumbers.length;
-    if (totalBetCost > balance) {
-        toast({ title: "Insufficient Funds", variant: "destructive" });
-        return;
-    }
-    
-    selectedNumbers.forEach(num => {
-        handleBet('Number', num);
-    });
-    setSelectedNumbers([]); // Clear selection after betting
+    handleBet('Number', selectedNumber);
+    setSelectedNumber(null); // Clear selection after betting
   }
   
   const lastResult = betHistory[0];
@@ -386,44 +373,35 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                 </div>
             </CardContent>
         </Card>
-      
-        <Tabs defaultValue="color" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="color" disabled={hasBetOnColor}>Color</TabsTrigger>
-                <TabsTrigger value="number" disabled={hasBetOnNumber}>Number</TabsTrigger>
-                <TabsTrigger value="size" disabled={hasBetOnBigSmall}>Big/Small</TabsTrigger>
-            </TabsList>
-            <TabsContent value="color" className="mt-4">
-                <div className="grid grid-cols-3 gap-2 sm:gap-4">
-                    <Button onClick={() => handleBet('Color', 'Green')} disabled={hasBetOnColor} className={cn("h-20 bg-green-500 hover:bg-green-600 text-white text-lg", hasBetOnColorType('Green') && 'has-bet')}>Green</Button>
-                    <Button onClick={() => handleBet('Color', 'Violet')} disabled={hasBetOnColor} className={cn("h-20 bg-violet-500 hover:bg-violet-600 text-white text-lg", hasBetOnColorType('Violet') && 'has-bet')}>Violet</Button>
-                    <Button onClick={() => handleBet('Color', 'Red')} disabled={hasBetOnColor} className={cn("h-20 bg-red-500 hover:bg-red-600 text-white text-lg", hasBetOnColorType('Red') && 'has-bet')}>Red</Button>
-                </div>
-            </TabsContent>
-            <TabsContent value="number" className="mt-4">
-                <div className={cn("grid grid-cols-5 gap-2 sm:gap-4", hasBetOnNumber && "opacity-50 pointer-events-none")}>
-                    {Object.keys(NUMBER_CONFIG).map(numStr => {
-                        const num = parseInt(numStr);
-                        const details = getNumberDetails(num);
-                        return (
-                            <div key={num}
-                                onClick={() => handleNumberSelect(num)}
-                                className={cn('number-ball', details.className, selectedNumbers.includes(num) && 'selected', hasBetOnNumberType(num) && 'has-bet' )}
-                            >
-                                {num}
-                            </div>
-                        )
-                    })}
-                </div>
-                <Button onClick={placeSelectedNumberBets} disabled={hasBetOnNumber || selectedNumbers.length === 0} className="w-full mt-4">Bet on Selected Numbers</Button>
-            </TabsContent>
-            <TabsContent value="size" className="mt-4">
-                 <div className="grid grid-cols-2 gap-2 sm:gap-4">
-                    <Button onClick={() => handleBet('BigSmall', 'Big')} disabled={hasBetOnBigSmall} className={cn("h-20 bg-orange-500 hover:bg-orange-600 text-white text-lg", hasBetOnBigSmallType('Big') && 'has-bet')}>Big</Button>
-                    <Button onClick={() => handleBet('BigSmall', 'Small')} disabled={hasBetOnBigSmall} className={cn("h-20 bg-blue-500 hover:bg-blue-600 text-white text-lg", hasBetOnBigSmallType('Small') && 'has-bet')}>Small</Button>
-                </div>
-            </TabsContent>
-        </Tabs>
+
+        <div className="space-y-4">
+            <div className={cn("grid grid-cols-3 gap-2 sm:gap-4", hasBetOnColor && "opacity-50 pointer-events-none")}>
+                <Button onClick={() => handleBet('Color', 'Green')} disabled={hasBetOnColor} className={cn("h-20 bg-green-500 hover:bg-green-600 text-white text-lg", hasBetOnColorType('Green') && 'has-bet')}>Green</Button>
+                <Button onClick={() => handleBet('Color', 'Violet')} disabled={hasBetOnColor} className={cn("h-20 bg-violet-500 hover:bg-violet-600 text-white text-lg", hasBetOnColorType('Violet') && 'has-bet')}>Violet</Button>
+                <Button onClick={() => handleBet('Color', 'Red')} disabled={hasBetOnColor} className={cn("h-20 bg-red-500 hover:bg-red-600 text-white text-lg", hasBetOnColorType('Red') && 'has-bet')}>Red</Button>
+            </div>
+
+            <div className={cn("grid grid-cols-5 gap-2 sm:gap-4", hasBetOnNumber && "opacity-50 pointer-events-none")}>
+                {Object.keys(NUMBER_CONFIG).map(numStr => {
+                    const num = parseInt(numStr);
+                    const details = getNumberDetails(num);
+                    return (
+                        <div key={num}
+                            onClick={() => handleNumberSelect(num)}
+                            className={cn('number-ball', details.className, selectedNumber === num && 'selected', hasBetOnNumberType(num) && 'has-bet' )}
+                        >
+                            {num}
+                        </div>
+                    )
+                })}
+            </div>
+            <Button onClick={placeSelectedNumberBet} disabled={hasBetOnNumber || selectedNumber === null} className="w-full">Bet on Selected Number</Button>
+            
+            <div className={cn("grid grid-cols-2 gap-2 sm:gap-4", hasBetOnBigSmall && "opacity-50 pointer-events-none")}>
+                <Button onClick={() => handleBet('BigSmall', 'Big')} disabled={hasBetOnBigSmall} className={cn("h-20 bg-orange-500 hover:bg-orange-600 text-white text-lg", hasBetOnBigSmallType('Big') && 'has-bet')}>Big</Button>
+                <Button onClick={() => handleBet('BigSmall', 'Small')} disabled={hasBetOnBigSmall} className={cn("h-20 bg-blue-500 hover:bg-blue-600 text-white text-lg", hasBetOnBigSmallType('Small') && 'has-bet')}>Small</Button>
+            </div>
+        </div>
           
         <Card>
             <CardContent className="p-4 flex flex-col gap-4">
@@ -529,7 +507,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          {lastResult && (
+          {lastResult && lastResult.bets.length > 0 && (
             <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
                 {lastResult.bets.map((bet, index) => {
                     const payout = getPayout(bet, lastResult.winningNumber);
@@ -574,3 +552,5 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     </div>
   );
 }
+
+    
