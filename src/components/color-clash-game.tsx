@@ -59,6 +59,10 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     if (!roundState) return [];
     return roundState.bets.filter(b => b.userId === user.id);
   }, [roundState, user.id]);
+  
+  const hasBetOnColor = useMemo(() => currentUserBets.some(b => b.type === 'Color'), [currentUserBets]);
+  const hasBetOnNumber = useMemo(() => currentUserBets.some(b => b.type === 'Number'), [currentUserBets]);
+  const hasBetOnBigSmall = useMemo(() => currentUserBets.some(b => b.type === 'BigSmall'), [currentUserBets]);
 
   useEffect(() => {
     const globalHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
@@ -309,10 +313,15 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   };
 
   const handleNumberSelect = (num: number) => {
+    if (hasBetOnNumber) return;
     setSelectedNumbers(prev => prev.includes(num) ? prev.filter(n => n !== num) : [...prev, num]);
   }
 
   const placeSelectedNumberBets = () => {
+    if (hasBetOnNumber) {
+        toast({ title: "Already Bet", description: "You have already placed a Number bet this round.", variant: "destructive" });
+        return;
+    }
     if (selectedNumbers.length === 0) {
         toast({ title: "No Numbers Selected", description: "Please select one or more numbers to bet on.", variant: "destructive" });
         return;
@@ -338,9 +347,9 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   const netResult = lastResult ? lastResult.totalPayout - lastResult.bets.reduce((s, b) => s + b.amount, 0) : 0;
   const isOverallWin = lastResult && netResult > 0;
 
-  const hasBetOnColor = (color: string) => currentUserBets.some(b => b.type === 'Color' && b.value === color);
-  const hasBetOnNumber = (num: number) => currentUserBets.some(b => b.type === 'Number' && b.value === num);
-  const hasBetOnBigSmall = (size: string) => currentUserBets.some(b => b.type === 'BigSmall' && b.value === size);
+  const hasBetOnColorType = (color: string) => currentUserBets.some(b => b.type === 'Color' && b.value === color);
+  const hasBetOnNumberType = (num: number) => currentUserBets.some(b => b.type === 'Number' && b.value === num);
+  const hasBetOnBigSmallType = (size: string) => currentUserBets.some(b => b.type === 'BigSmall' && b.value === size);
 
   return (
     <div className="space-y-6">
@@ -386,32 +395,32 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
             </TabsList>
             <TabsContent value="color" className="mt-4">
                 <div className="grid grid-cols-3 gap-2 sm:gap-4">
-                    <Button onClick={() => handleBet('Color', 'Green')} className={cn("h-20 bg-green-500 hover:bg-green-600 text-white text-lg", hasBetOnColor('Green') && 'has-bet')}>Green</Button>
-                    <Button onClick={() => handleBet('Color', 'Violet')} className={cn("h-20 bg-violet-500 hover:bg-violet-600 text-white text-lg", hasBetOnColor('Violet') && 'has-bet')}>Violet</Button>
-                    <Button onClick={() => handleBet('Color', 'Red')} className={cn("h-20 bg-red-500 hover:bg-red-600 text-white text-lg", hasBetOnColor('Red') && 'has-bet')}>Red</Button>
+                    <Button onClick={() => handleBet('Color', 'Green')} disabled={hasBetOnColor} className={cn("h-20 bg-green-500 hover:bg-green-600 text-white text-lg", hasBetOnColorType('Green') && 'has-bet')}>Green</Button>
+                    <Button onClick={() => handleBet('Color', 'Violet')} disabled={hasBetOnColor} className={cn("h-20 bg-violet-500 hover:bg-violet-600 text-white text-lg", hasBetOnColorType('Violet') && 'has-bet')}>Violet</Button>
+                    <Button onClick={() => handleBet('Color', 'Red')} disabled={hasBetOnColor} className={cn("h-20 bg-red-500 hover:bg-red-600 text-white text-lg", hasBetOnColorType('Red') && 'has-bet')}>Red</Button>
                 </div>
             </TabsContent>
             <TabsContent value="number" className="mt-4">
-                <div className="grid grid-cols-5 gap-2 sm:gap-4">
+                <div className={cn("grid grid-cols-5 gap-2 sm:gap-4", hasBetOnNumber && "opacity-50 pointer-events-none")}>
                     {Object.keys(NUMBER_CONFIG).map(numStr => {
                         const num = parseInt(numStr);
                         const details = getNumberDetails(num);
                         return (
                             <div key={num}
                                 onClick={() => handleNumberSelect(num)}
-                                className={cn('number-ball', details.className, selectedNumbers.includes(num) && 'selected', hasBetOnNumber(num) && 'has-bet' )}
+                                className={cn('number-ball', details.className, selectedNumbers.includes(num) && 'selected', hasBetOnNumberType(num) && 'has-bet' )}
                             >
                                 {num}
                             </div>
                         )
                     })}
                 </div>
-                <Button onClick={placeSelectedNumberBets} className="w-full mt-4">Bet on Selected Numbers</Button>
+                <Button onClick={placeSelectedNumberBets} disabled={hasBetOnNumber} className="w-full mt-4">Bet on Selected Numbers</Button>
             </TabsContent>
             <TabsContent value="size" className="mt-4">
                  <div className="grid grid-cols-2 gap-2 sm:gap-4">
-                    <Button onClick={() => handleBet('BigSmall', 'Big')} className={cn("h-20 bg-orange-500 hover:bg-orange-600 text-white text-lg", hasBetOnBigSmall('Big') && 'has-bet')}>Big</Button>
-                    <Button onClick={() => handleBet('BigSmall', 'Small')} className={cn("h-20 bg-blue-500 hover:bg-blue-600 text-white text-lg", hasBetOnBigSmall('Small') && 'has-bet')}>Small</Button>
+                    <Button onClick={() => handleBet('BigSmall', 'Big')} disabled={hasBetOnBigSmall} className={cn("h-20 bg-orange-500 hover:bg-orange-600 text-white text-lg", hasBetOnBigSmallType('Big') && 'has-bet')}>Big</Button>
+                    <Button onClick={() => handleBet('BigSmall', 'Small')} disabled={hasBetOnBigSmall} className={cn("h-20 bg-blue-500 hover:bg-blue-600 text-white text-lg", hasBetOnBigSmallType('Small') && 'has-bet')}>Small</Button>
                 </div>
             </TabsContent>
         </Tabs>
@@ -441,61 +450,56 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
         </Card>
 
         <Card>
-            <Tabs defaultValue="history">
-              <CardHeader>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="history"><History className="mr-2 h-4 w-4"/>Game History</TabsTrigger>
-                  <TabsTrigger value="leaderboard"><Trophy className="mr-2 h-4 w-4"/>Leaderboard</TabsTrigger>
-                </TabsList>
-              </CardHeader>
-              <CardContent>
-                <TabsContent value="history">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                            <TableHead>Period</TableHead>
-                            <TableHead>Result</TableHead>
-                            <TableHead>Your Bets</TableHead>
-                            <TableHead className="text-right">Profit/Loss</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                        {betHistory.length > 0 ? betHistory.map((result) => {
-                          const details = getNumberDetails(result.winningNumber);
-                          const totalBetAmount = result.bets.reduce((sum, bet) => sum + bet.amount, 0);
-                          const netResult = result.totalPayout - totalBetAmount;
-                          const betsSummary = result.bets.length > 0 
-                            ? result.bets.map(b => `${b.value} (₹${b.amount.toFixed(0)})`).join(', ') 
-                            : 'No Bet';
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <History className="h-5 w-5" /> Game History
+                </CardTitle>
+                <CardDescription>A record of your recent games.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                        <TableHead>Period</TableHead>
+                        <TableHead>Result</TableHead>
+                        <TableHead>Your Bets</TableHead>
+                        <TableHead className="text-right">Profit/Loss</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                    {betHistory.length > 0 ? betHistory.map((result) => {
+                        const details = getNumberDetails(result.winningNumber);
+                        const totalBetAmount = result.bets.reduce((sum, bet) => sum + bet.amount, 0);
+                        const netResult = result.totalPayout - totalBetAmount;
+                        const betsSummary = result.bets.length > 0 
+                        ? result.bets.map(b => `${b.value} (₹${b.amount.toFixed(0)})`).join(', ') 
+                        : 'No Bet';
 
-                          return (
-                            <TableRow key={result.id}>
-                                <TableCell className="font-mono text-xs">{result.id}</TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-2">
-                                        <span className="font-bold text-lg">{result.winningNumber}</span>
-                                        <div className="flex flex-col text-xs">
-                                             <span className={cn('font-semibold', details.color === 'Green' ? 'text-green-500' : details.color === 'Red' ? 'text-red-500' : 'text-violet-500')}>{details.color}</span>
-                                             <span className={cn('font-semibold', details.size === 'Big' ? 'text-orange-500' : 'text-blue-500')}>{details.size}</span>
-                                        </div>
+                        return (
+                        <TableRow key={result.id}>
+                            <TableCell className="font-mono text-xs">{result.id}</TableCell>
+                            <TableCell>
+                                <div className="flex items-center gap-2">
+                                    <span className="font-bold text-lg">{result.winningNumber}</span>
+                                    <div className="flex flex-col text-xs">
+                                            <span className={cn('font-semibold', details.color === 'Green' ? 'text-green-500' : details.color === 'Red' ? 'text-red-500' : 'text-violet-500')}>{details.color}</span>
+                                            <span className={cn('font-semibold', details.size === 'Big' ? 'text-orange-500' : 'text-blue-500')}>{details.size}</span>
                                     </div>
-                                </TableCell>
-                                <TableCell className="max-w-[150px] truncate text-xs">{betsSummary}</TableCell>
-                                <TableCell className={`text-right font-mono font-semibold ${netResult >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {netResult >= 0 ? `+₹${netResult.toFixed(2)}` : `-₹${Math.abs(netResult).toFixed(2)}`}
-                                </TableCell>
-                            </TableRow>
-                          )
-                        }) : <TableRow><TableCell colSpan={4} className="text-center">No history yet.</TableCell></TableRow>}
-                        </TableBody>
-                    </Table>
-                </TabsContent>
-                <TabsContent value="leaderboard">
-                  <Leaderboard isAdminView={user.role === 'admin'} />
-                </TabsContent>
-              </CardContent>
-            </Tabs>
-          </Card>
+                                </div>
+                            </TableCell>
+                            <TableCell className="max-w-[150px] truncate text-xs">{betsSummary}</TableCell>
+                            <TableCell className={`text-right font-mono font-semibold ${netResult >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {netResult >= 0 ? `+₹${netResult.toFixed(2)}` : `-₹${Math.abs(netResult).toFixed(2)}`}
+                            </TableCell>
+                        </TableRow>
+                        )
+                    }) : <TableRow><TableCell colSpan={4} className="text-center">No history yet.</TableCell></TableRow>}
+                    </TableBody>
+                </Table>
+            </CardContent>
+        </Card>
+        
+        <Leaderboard isAdminView={user.role === 'admin'} />
 
       <AlertDialog open={showResultDialog} onOpenChange={setShowResultDialog}>
         {isOverallWin && <Confetti width={windowSize.width} height={windowSize.height} recycle={false} numberOfPieces={200} />}
@@ -555,5 +559,3 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     </div>
   );
 }
-
-    
