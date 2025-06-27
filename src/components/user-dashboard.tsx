@@ -1,18 +1,22 @@
+
 "use client";
 
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ColorClashGame } from '@/components/color-clash-game';
-import type { User } from '@/lib/types';
+import { GameLobby } from '@/components/color-clash-game';
+import type { User, WithdrawalRequest } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
-import { Gamepad2, KeyRound, Wallet } from 'lucide-react';
+import { Gamepad2, KeyRound, Wallet, Banknote } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { authService } from '@/lib/auth';
+import { withdrawalService } from '@/lib/withdrawService';
+import { useEffect, useState } from 'react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 interface UserDashboardProps {
     user: User;
@@ -30,9 +34,19 @@ const fundsSchema = z.object({
 })
 type FundsFormValues = z.infer<typeof fundsSchema>;
 
+const withdrawSchema = z.object({
+    amount: z.coerce.number().positive("Must be a positive number.").min(1, "Amount must be at least $1."),
+})
+type WithdrawFormValues = z.infer<typeof withdrawSchema>;
+
 
 export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps) {
   const { toast } = useToast();
+  const [withdrawalHistory, setWithdrawalHistory] = useState<WithdrawalRequest[]>([]);
+
+  useEffect(() => {
+    setWithdrawalHistory(withdrawalService.getRequestsForUser(user.id));
+  }, [user.id]);
 
   const accountForm = useForm<UpdateFormValues>({
     resolver: zodResolver(updateSchema),
@@ -46,6 +60,13 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
     resolver: zodResolver(fundsSchema),
     defaultValues: {
         amount: 100,
+    }
+  });
+
+   const withdrawForm = useForm<WithdrawFormValues>({
+    resolver: zodResolver(withdrawSchema),
+    defaultValues: {
+        amount: 10,
     }
   });
 
@@ -70,34 +91,41 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
         toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   };
+  
+  const handleWithdraw = (data: WithdrawFormValues) => {
+      if (data.amount > (user.balance ?? 0)) {
+          toast({ title: "Error", description: "Withdrawal amount cannot exceed your balance.", variant: "destructive" });
+          return;
+      }
+      try {
+          withdrawalService.createRequest({ amount: data.amount, userId: user.id, userEmail: user.email });
+          withdrawForm.reset();
+          setWithdrawalHistory(withdrawalService.getRequestsForUser(user.id));
+          toast({ title: "Success", description: "Your withdrawal request has been submitted." });
+      } catch (error: any) {
+          toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
+  }
 
   return (
     <div className="space-y-6">
         <div className="space-y-1">
             <h1 className="text-3xl font-bold">Welcome, {user.email}!</h1>
-            <p className="text-muted-foreground">Ready to play? Place your bets and win big in Color Clash.</p>
+            <p className="text-muted-foreground">Ready to play? Place your bets and win big.</p>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2">
-                <Card className="w-full">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2"><Gamepad2/>Color Clash Game</CardTitle>
-                        <CardDescription>The round is active. Place your bets on Red, Green, or Violet.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <ColorClashGame user={user} onUserUpdate={onUserUpdate} />
-                    </CardContent>
-                </Card>
+                <GameLobby user={user} onUserUpdate={onUserUpdate} />
             </div>
             <div className="md:col-span-1 space-y-6">
                 <Card>
                     <CardHeader>
                         <CardTitle>My Account</CardTitle>
-                        <CardDescription>Manage your account settings.</CardDescription>
+                        <CardDescription>Manage your account settings and funds.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <Accordion type="single" collapsible className="w-full">
+                        <Accordion type="single" collapsible className="w-full" defaultValue='funds'>
                             <AccordionItem value="credentials">
                                 <AccordionTrigger><KeyRound className="mr-2"/>Update Credentials</AccordionTrigger>
                                 <AccordionContent>
@@ -119,6 +147,43 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
                                             <Button type="submit" className="w-full">Add to Balance</Button>
                                         </form>
                                     </Form>
+                                </AccordionContent>
+                            </AccordionItem>
+                             <AccordionItem value="withdraw">
+                                <AccordionTrigger><Banknote className="mr-2"/>Withdraw Funds</AccordionTrigger>
+                                <AccordionContent className="space-y-4">
+                                     <Form {...withdrawForm}>
+                                        <form onSubmit={withdrawForm.handleSubmit(handleWithdraw)} className="space-y-4">
+                                            <FormField control={withdrawForm.control} name="amount" render={({field}) => (<FormItem><FormLabel>Amount</FormLabel><FormControl><Input type="number" placeholder="10" {...field}/></FormControl><FormMessage/></FormItem>)} />
+                                            <Button type="submit" className="w-full">Request Withdrawal</Button>
+                                        </form>
+                                    </Form>
+                                    <hr className="my-4 border-border"/>
+                                    <h4 className="font-semibold">Withdrawal History</h4>
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Date</TableHead>
+                                                <TableHead>Amount</TableHead>
+                                                <TableHead>Status</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                        {withdrawalHistory.length > 0 ? withdrawalHistory.map(req => (
+                                            <TableRow key={req.id}>
+                                                <TableCell>{new Date(req.timestamp).toLocaleDateString()}</TableCell>
+                                                <TableCell>${req.amount.toFixed(2)}</TableCell>
+                                                <TableCell>
+                                                    <span className={`px-2 py-1 rounded-full text-xs ${req.status === 'pending' ? 'bg-yellow-500 text-black' : 'bg-green-500 text-white'}`}>
+                                                        {req.status}
+                                                    </span>
+                                                </TableCell>
+                                            </TableRow>
+                                        )) : (
+                                            <TableRow><TableCell colSpan={3} className="text-center">No history.</TableCell></TableRow>
+                                        )}
+                                        </TableBody>
+                                    </Table>
                                 </AccordionContent>
                             </AccordionItem>
                         </Accordion>

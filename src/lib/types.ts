@@ -1,16 +1,23 @@
+
 export type Color = 'Red' | 'Green' | 'Violet';
+export type BigSmall = 'Big' | 'Small';
+export type BetType = 'Color' | 'Number' | 'BigSmall';
+export type Difficulty = 'easy' | 'moderate' | 'hard';
 
 export interface Bet {
-  color: Color;
+  type: BetType;
+  value: Color | BigSmall | number;
   amount: number;
   payout?: number;
+  userId: string;
+  timestamp: number;
 }
 
 export interface RoundResult {
-  winningColor: Color;
+  id: string;
+  winningNumber: number;
   bets: Bet[];
   totalPayout: number;
-  winningBets: Bet[];
 }
 
 export type Totals = {
@@ -23,4 +30,34 @@ export interface User {
   password?: string;
   role: 'admin' | 'user';
   balance: number;
+}
+
+export interface SupportTicket {
+    id: string;
+    userId: string;
+    userEmail: string;
+    category: 'Deposit/Withdraw' | 'Betting Related' | 'Other';
+    description: string;
+    status: 'pending' | 'resolved';
+    timestamp: string;
+}
+
+export interface WithdrawalRequest {
+    id: string;
+    userId: string;
+    userEmail: string;
+    amount: number;
+    status: 'pending' | 'sent';
+    timestamp: string;
+}
+
+export interface GameSettings {
+    difficulty: Difficulty;
+    manualWinner?: number;
+}
+
+export interface LeaderboardEntry {
+    userId: string;
+    userName: string;
+    totalWinnings: number;
 }

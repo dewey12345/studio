@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -19,7 +20,7 @@ export default function DashboardPage() {
       router.push('/');
     } else {
       // The full user object with password isn't stored, so we refetch from the "DB"
-      const users = authService.getUsers();
+      const users = authService.getUsers(true);
       const fullCurrentUser = users.find(u => u.id === currentUser.id);
       setUser(fullCurrentUser || currentUser); // Fallback to stored user
       setLoading(false);

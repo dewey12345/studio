@@ -2,32 +2,25 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { aiWinningColorSelection } from '@/ai/flows/ai-winning-color-selection';
-import type { Bet, RoundResult, Color, Totals, User } from '@/lib/types';
+import { aiDetermineWinner } from '@/ai/flows/ai-determine-winner';
+import type { Bet, RoundResult, User, GameSettings, BetType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { History, Palette, Redo, Shield, User as UserIcon, Wallet } from 'lucide-react';
+import { History, Palette, Wallet, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { authService } from '@/lib/auth';
+import { getNumberDetails, getPayout, NUMBER_CONFIG } from '@/lib/game-logic';
+import { GAME_SETTINGS_KEY, GLOBAL_ROUND_HISTORY_KEY, ROUND_STATE_KEY } from '@/lib/constants';
+import Leaderboard from './leaderboard';
 
 const ROUND_DURATION = 30;
 const POST_ROUND_DELAY = 5;
 
-const COLOR_CONFIG: Record<Color, { odds: number; className: string; textColor: string; borderColor: string; display: string }> = {
-  Red: { odds: 2, className: 'bg-red-500 hover:bg-red-600', textColor: 'text-red-500', borderColor: 'border-red-500', display: 'Red' },
-  Green: { odds: 2, className: 'bg-green-500 hover:bg-green-600', textColor: 'text-green-500', borderColor: 'border-green-500', display: 'Green' },
-  Violet: { odds: 10, className: 'bg-violet-500 hover:bg-violet-600', textColor: 'text-violet-500', borderColor: 'border-violet-500', display: 'Violet' },
-};
-
-const ROUND_STATE_KEY = 'color_clash_round_state';
-const BET_HISTORY_KEY = 'color_clash_bet_history';
+const BET_MULTIPLIERS = [1, 5, 10, 20, 50, 100];
 
 type SyncedBet = Bet & { userId: string };
 
@@ -35,139 +28,141 @@ interface RoundState {
   id: string;
   endTime: number;
   bets: SyncedBet[];
-  winningColor: Color | null;
-  isAiMode: boolean;
-  manualWinner: Color | null;
+  winningNumber: number | null;
 }
 
-interface ColorClashGameProps {
+interface GameLobbyProps {
   user: User;
   onUserUpdate: (user: User) => void;
 }
 
-export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
+export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   const [roundState, setRoundState] = useState<RoundState | null>(null);
   const [timer, setTimer] = useState(ROUND_DURATION);
   const [balance, setBalance] = useState(user.balance ?? 0);
-  const [betAmount, setBetAmount] = useState('10');
+  const [betAmount, setBetAmount] = useState(10);
+  const [betMultiplier, setBetMultiplier] = useState(1);
   const [betHistory, setBetHistory] = useState<RoundResult[]>([]);
   const [isProcessingEnd, setIsProcessingEnd] = useState(false);
   const [showResultDialog, setShowResultDialog] = useState(false);
-  
+  const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
+
   const { toast } = useToast();
-  const isAdmin = user.role === 'admin';
 
   const isRoundInProgress = roundState ? Date.now() < roundState.endTime : false;
 
   const startNewRound = useCallback(() => {
     if (typeof window === 'undefined') return;
-
-    const lastStateRaw = localStorage.getItem(ROUND_STATE_KEY);
-    if(lastStateRaw) {
-        const lastState = JSON.parse(lastStateRaw) as RoundState;
-        if (Date.now() < lastState.endTime + (POST_ROUND_DELAY * 1000) && lastState.id !== roundState?.id) {
-            setRoundState(lastState);
-            return;
-        }
-    }
     
+    // Clear one-time manual winner setting
+    const settingsRaw = localStorage.getItem(GAME_SETTINGS_KEY);
+    if(settingsRaw) {
+      const settings = JSON.parse(settingsRaw);
+      if(settings.manualWinner !== undefined) {
+        delete settings.manualWinner;
+        localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(settings));
+      }
+    }
+
     const newRoundState: RoundState = {
         id: new Date().getTime().toString(),
         endTime: Date.now() + ROUND_DURATION * 1000,
         bets: [],
-        winningColor: null,
-        isAiMode: true,
-        manualWinner: null,
+        winningNumber: null,
     };
     
     localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(newRoundState));
     setRoundState(newRoundState);
     setIsProcessingEnd(false);
     setShowResultDialog(false);
-  }, [roundState?.id]);
+    setSelectedNumbers([]);
+  }, []);
 
   const handleRoundEnd = useCallback(async () => {
     if (isProcessingEnd || typeof window === 'undefined') return;
 
     const currentState = JSON.parse(localStorage.getItem(ROUND_STATE_KEY)!) as RoundState;
-    if (currentState.winningColor) {
+    if (currentState.winningNumber !== null) {
       if(currentState.id === roundState?.id) setRoundState(currentState);
       return;
     }
     
     setIsProcessingEnd(true);
 
-    const currentTotals = currentState.bets.reduce(
-      (acc: Totals, bet: SyncedBet) => {
-        acc[bet.color] = (acc[bet.color] || 0) + bet.amount;
-        return acc;
-      },
-      { Red: 0, Green: 0, Violet: 0 }
-    );
+    const gameSettings: GameSettings = JSON.parse(localStorage.getItem(GAME_SETTINGS_KEY) || '{"difficulty": "easy"}');
+    
+    let winningNumber: number;
 
-    let winningColor: Color;
-    if (currentState.manualWinner) {
-        winningColor = currentState.manualWinner;
-    } else if (currentState.isAiMode) {
+    if (gameSettings.manualWinner !== undefined && gameSettings.manualWinner !== null) {
+        winningNumber = gameSettings.manualWinner;
+    } else {
       try {
-        const result = await aiWinningColorSelection({
-          redBetTotal: currentTotals.Red,
-          greenBetTotal: currentTotals.Green,
-          violetBetTotal: currentTotals.Violet,
+        const result = await aiDetermineWinner({
+          bets: currentState.bets,
+          difficulty: gameSettings.difficulty,
         });
-        winningColor = result.winningColor;
+        winningNumber = result.winningNumber;
       } catch (error) {
         console.error("AI failed to select a winner:", error);
         toast({ title: "AI Error", description: "Could not determine winner, selecting randomly.", variant: "destructive" });
-        const colors: Color[] = ['Red', 'Green', 'Violet'];
-        winningColor = colors[Math.floor(Math.random() * colors.length)];
+        winningNumber = Math.floor(Math.random() * 10);
       }
-    } else {
-      const colors: Color[] = ['Red', 'Green', 'Violet'];
-      winningColor = colors[Math.floor(Math.random() * colors.length)];
     }
+    
+    const allUsers = authService.getUsers(true);
+    let totalPayouts = new Map<string, number>();
 
+    currentState.bets.forEach(bet => {
+        const payout = getPayout(bet, winningNumber);
+        if(payout > 0) {
+            const currentPayout = totalPayouts.get(bet.userId) || 0;
+            totalPayouts.set(bet.userId, currentPayout + payout);
+        }
+    });
+
+    const updatedUsers: User[] = [];
+    totalPayouts.forEach((payout, userId) => {
+        const userToUpdate = allUsers.find(u => u.id === userId);
+        if(userToUpdate) {
+            const newBalance = (userToUpdate.balance ?? 0) + payout;
+            const updatedUser = {...userToUpdate, balance: newBalance};
+            updatedUsers.push(updatedUser);
+            if(userToUpdate.id === user.id) {
+                setBalance(newBalance);
+                onUserUpdate(updatedUser);
+            }
+        }
+    });
+
+    if(updatedUsers.length > 0) {
+        authService.updateMultipleUsers(updatedUsers);
+    }
+    
+    const finalState = { ...currentState, winningNumber };
     const userBets = currentState.bets.filter(b => b.userId === user.id);
-    let totalPayout = 0;
-    const winningBets: Bet[] = [];
-    userBets.forEach(bet => {
-      if (bet.color === winningColor) {
-        const payout = bet.amount * COLOR_CONFIG[bet.color].odds;
-        totalPayout += payout;
-        winningBets.push({ ...bet, payout });
-      }
-    });
+    const userTotalPayout = totalPayouts.get(user.id) || 0;
 
-    if (totalPayout > 0) {
-      const newBalance = (user.balance ?? 0) + totalPayout;
-      setBalance(newBalance);
-      try {
-          const updatedUser = authService.updateUserByAdmin(user.id, { balance: newBalance });
-          onUserUpdate(updatedUser);
-      } catch (error) {
-          console.error("Failed to sync balance", error);
-          toast({ title: "Sync Error", description: "Could not save new balance.", variant: "destructive" });
-      }
-    }
+    const result: RoundResult = { 
+        id: currentState.id,
+        winningNumber: winningNumber, 
+        bets: userBets, 
+        totalPayout: userTotalPayout,
+    };
     
-    const finalState = { ...currentState, winningColor };
-    const result: RoundResult = { winningColor, bets: userBets, totalPayout, winningBets };
-    
-    setBetHistory(prev => {
-        const newHistory = [result, ...prev];
-        localStorage.setItem(BET_HISTORY_KEY, JSON.stringify(newHistory));
-        return newHistory;
-    });
+    const globalHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
+    globalHistory.unshift(result);
+    localStorage.setItem(GLOBAL_ROUND_HISTORY_KEY, JSON.stringify(globalHistory.slice(0, 50)));
 
+    setBetHistory(prev => [result, ...prev].slice(0, 50));
+    
     localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(finalState));
     setRoundState(finalState);
     setShowResultDialog(true);
-  }, [isProcessingEnd, roundState?.id, user.id, user.balance, toast, onUserUpdate]);
+  }, [isProcessingEnd, roundState?.id, user.id, toast, onUserUpdate]);
 
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
     const handleStorageChange = (event: StorageEvent) => {
         if (event.key === ROUND_STATE_KEY && event.newValue) {
             const newState: RoundState = JSON.parse(event.newValue);
@@ -185,11 +180,6 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
         startNewRound();
     }
     
-    const savedHistoryRaw = localStorage.getItem(BET_HISTORY_KEY);
-    if (savedHistoryRaw) {
-        setBetHistory(JSON.parse(savedHistoryRaw));
-    }
-
     window.addEventListener('storage', handleStorageChange);
     return () => {
         window.removeEventListener('storage', handleStorageChange);
@@ -202,15 +192,12 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
 
   useEffect(() => {
     if (!roundState) return;
-
     const updateTimer = () => {
       const now = Date.now();
       if (now < roundState.endTime) {
-        // Round in progress
         setTimer(Math.ceil((roundState.endTime - now) / 1000));
       } else {
-        // Post-round cooldown
-        if (!roundState.winningColor) {
+        if (roundState.winningNumber === null) {
            handleRoundEnd();
         }
         const cooldownEnds = roundState.endTime + (POST_ROUND_DELAY * 1000);
@@ -221,103 +208,66 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
         }
       }
     };
-    
     updateTimer();
     const intervalId = setInterval(updateTimer, 500);
     return () => clearInterval(intervalId);
-
   }, [roundState, handleRoundEnd, startNewRound]);
 
 
-  const handleBet = (color: Color) => {
-    const amount = parseFloat(betAmount);
-    if (isNaN(amount) || amount <= 0) {
+  const handleBet = (type: BetType, value: string | number) => {
+    const finalBetAmount = betAmount * betMultiplier;
+    if (isNaN(finalBetAmount) || finalBetAmount <= 0) {
       toast({ title: "Invalid Bet", description: "Please enter a positive number.", variant: "destructive" });
       return;
     }
-    if (amount > balance) {
-      toast({ title: "Insufficient Funds", description: "You do not have enough balance to place this bet.", variant: "destructive" });
+    if (finalBetAmount > balance) {
+      toast({ title: "Insufficient Funds", variant: "destructive" });
       return;
     }
     if (!isRoundInProgress) {
-      toast({ title: "Round Over", description: "Please wait for the next round to start.", variant: "destructive" });
+      toast({ title: "Round Over", description: "Please wait for the next round.", variant: "destructive" });
       return;
     }
 
-    const newBalance = balance - amount;
+    const newBalance = balance - finalBetAmount;
     setBalance(newBalance);
 
-    const newBet: SyncedBet = { color, amount, userId: user.id };
+    const newBet: SyncedBet = { type, value, amount: finalBetAmount, userId: user.id, timestamp: Date.now() };
     const currentState = JSON.parse(localStorage.getItem(ROUND_STATE_KEY)!) as RoundState;
     const newState = { ...currentState, bets: [...currentState.bets, newBet] };
     localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(newState));
     setRoundState(newState);
 
     try {
-        const updatedUser = authService.updateUserByAdmin(user.id, { balance: newBalance });
+        const updatedUser = authService.updateBalance(user.id, -finalBetAmount);
         onUserUpdate(updatedUser);
+        toast({ title: "Bet Placed!", description: `You bet $${finalBetAmount.toFixed(2)} on ${value}.`})
     } catch (error) {
         console.error("Failed to sync balance", error);
     }
   };
-  
-  const handleAdminControlChange = (change: Partial<Pick<RoundState, 'isAiMode' | 'manualWinner'>>) => {
-      if(!isAdmin || !isRoundInProgress) return;
-      const currentState = JSON.parse(localStorage.getItem(ROUND_STATE_KEY)!) as RoundState;
-      const newState = {...currentState, ...change};
-      if(change.manualWinner) {
-        newState.isAiMode = false;
-        toast({ title: "Winner Selected", description: `${change.manualWinner} will win at the end of the round.`});
-      }
-      localStorage.setItem(ROUND_STATE_KEY, JSON.stringify(newState));
-      setRoundState(newState);
+
+  const handleNumberSelect = (num: number) => {
+    setSelectedNumbers(prev => prev.includes(num) ? prev.filter(n => n !== num) : [...prev, num]);
   }
 
-  const totals = useMemo<Totals>(() => {
-    if (!roundState) return { Red: 0, Green: 0, Violet: 0 };
-    return roundState.bets.reduce(
-      (acc: Totals, bet: SyncedBet) => {
-        acc[bet.color] = (acc[bet.color] || 0) + bet.amount;
-        return acc;
-      },
-      { Red: 0, Green: 0, Violet: 0 }
-    );
-  }, [roundState]);
-
-  const currentBets = useMemo(() => {
-    return roundState?.bets.filter(b => b.userId === user.id) ?? [];
-  }, [roundState, user.id]);
-
-  const renderHistoryTable = (results: RoundResult[]) => (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Round</TableHead>
-          <TableHead>Winning Color</TableHead>
-          <TableHead>Your Bets</TableHead>
-          <TableHead className="text-right">Payout</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {results.length > 0 ? results.map((result, index) => {
-          const userBetsOnRound = result.bets.map(b => `${b.amount} on ${b.color}`).join(', ');
-          const userPayoutOnRound = result.winningBets.reduce((acc, bet) => acc + (bet.payout || 0), 0);
-          return (
-            <TableRow key={index} className={cn("border-l-4", result.winningColor && COLOR_CONFIG[result.winningColor].borderColor)}>
-              <TableCell>{betHistory.length - index}</TableCell>
-              <TableCell>
-                <span className={`px-2 py-1 rounded-full text-white text-xs ${COLOR_CONFIG[result.winningColor].className}`}>
-                  {result.winningColor}
-                </span>
-              </TableCell>
-              <TableCell>{userBetsOnRound || 'None'}</TableCell>
-              <TableCell className="text-right font-mono">{userPayoutOnRound > 0 ? `+${userPayoutOnRound.toFixed(2)}` : '0.00'}</TableCell>
-            </TableRow>
-          )
-        }) : <TableRow><TableCell colSpan={4} className="text-center">No history yet.</TableCell></TableRow>}
-      </TableBody>
-    </Table>
-  );
+  const placeSelectedNumberBets = () => {
+    if (selectedNumbers.length === 0) {
+        toast({ title: "No Numbers Selected", description: "Please select one or more numbers to bet on.", variant: "destructive" });
+        return;
+    }
+    // This is a simplified approach: each number gets the same bet amount.
+    const totalBetCost = betAmount * betMultiplier * selectedNumbers.length;
+    if (totalBetCost > balance) {
+        toast({ title: "Insufficient Funds", variant: "destructive" });
+        return;
+    }
+    
+    selectedNumbers.forEach(num => {
+        handleBet('Number', num);
+    });
+    setSelectedNumbers([]); // Clear selection after betting
+  }
   
   const lastResult = betHistory[0];
 
@@ -326,7 +276,7 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
       <header className="flex flex-col sm:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-3">
           <Palette className="h-8 w-8 text-primary" />
-          <h1 className="text-3xl font-bold font-headline">Color Clash</h1>
+          <h1 className="text-3xl font-bold font-headline">Game Lobby</h1>
         </div>
         <Card className="min-w-[200px]">
           <CardHeader className="flex flex-row items-center justify-between p-3 space-y-0">
@@ -339,141 +289,126 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
         </Card>
       </header>
       
-      <div className={cn("grid grid-cols-1 gap-6", isAdmin && "lg:grid-cols-3")}>
-        <main className={cn("space-y-6", isAdmin && "lg:col-span-2")}>
-          <Card>
-            <CardContent className="p-6 text-center space-y-4">
-              <p className="text-muted-foreground">{isRoundInProgress ? 'Round ends in' : 'Next round starts in'}</p>
-              <div className="relative w-full h-4 bg-secondary rounded-full overflow-hidden">
-                <div 
-                  className="absolute top-0 left-0 h-full bg-primary transition-all duration-1000 ease-linear"
-                  style={{ width: `${(timer / (isRoundInProgress ? ROUND_DURATION : POST_ROUND_DELAY)) * 100}%`}}
-                />
-              </div>
-              <p className="text-6xl font-bold font-mono">{timer}</p>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md mx-auto">
-                <Label htmlFor="betAmount" className="sr-only">Bet Amount</Label>
-                <Input
-                  id="betAmount"
-                  type="number"
-                  value={betAmount}
-                  onChange={(e) => setBetAmount(e.target.value)}
-                  placeholder="Bet amount"
-                  className="text-center text-lg"
-                  disabled={!isRoundInProgress}
-                />
-                <Button onClick={() => setBetAmount((balance ?? 0).toFixed(2))} variant="outline" disabled={!isRoundInProgress}>
-                  Bet Max
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
-                {(Object.keys(COLOR_CONFIG) as Color[]).map(color => (
-                  <Button
-                    key={color}
-                    className={`${COLOR_CONFIG[color].className} text-white text-lg font-bold h-24 flex flex-col`}
-                    onClick={() => handleBet(color)}
-                    disabled={!isRoundInProgress}
-                  >
-                    <span>{COLOR_CONFIG[color].display}</span>
-                    <span className="text-sm font-normal">x{COLOR_CONFIG[color].odds}</span>
-                  </Button>
-                ))}
-              </div>
+        <Card>
+            <CardContent className="p-4 md:p-6 text-center space-y-4">
+                <div className='flex justify-between items-center text-sm text-muted-foreground'>
+                    <span>Period</span>
+                    <span>Time Remaining</span>
+                </div>
+                <div className='flex justify-between items-center'>
+                    <span className="font-mono text-lg">{roundState?.id}</span>
+                    <span className="text-4xl font-bold font-mono text-accent">{`00:${timer.toString().padStart(2, '0')}`}</span>
+                </div>
+                <div className="relative w-full h-2 bg-secondary rounded-full overflow-hidden">
+                    <div 
+                    className="absolute top-0 left-0 h-full bg-primary transition-all duration-1000 ease-linear"
+                    style={{ width: `${(timer / (isRoundInProgress ? ROUND_DURATION : POST_ROUND_DELAY)) * 100}%`}}
+                    />
+                </div>
             </CardContent>
-          </Card>
+        </Card>
+      
+        <Tabs defaultValue="color" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="color">Color</TabsTrigger>
+                <TabsTrigger value="number">Number</TabsTrigger>
+                <TabsTrigger value="size">Big/Small</TabsTrigger>
+            </TabsList>
+            <TabsContent value="color" className="mt-4">
+                <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                    <Button onClick={() => handleBet('Color', 'Green')} className="h-20 bg-green-500 hover:bg-green-600 text-white text-lg">Green</Button>
+                    <Button onClick={() => handleBet('Color', 'Violet')} className="h-20 bg-violet-500 hover:bg-violet-600 text-white text-lg">Violet</Button>
+                    <Button onClick={() => handleBet('Color', 'Red')} className="h-20 bg-red-500 hover:bg-red-600 text-white text-lg">Red</Button>
+                </div>
+            </TabsContent>
+            <TabsContent value="number" className="mt-4">
+                <div className="grid grid-cols-5 gap-2 sm:gap-4">
+                    {Object.keys(NUMBER_CONFIG).map(numStr => {
+                        const num = parseInt(numStr);
+                        const details = getNumberDetails(num);
+                        return (
+                            <div key={num}
+                                onClick={() => handleNumberSelect(num)}
+                                className={cn('number-ball', details.className, selectedNumbers.includes(num) && 'selected' )}
+                            >
+                                {num}
+                            </div>
+                        )
+                    })}
+                </div>
+                <Button onClick={placeSelectedNumberBets} className="w-full mt-4">Bet on Selected Numbers</Button>
+            </TabsContent>
+            <TabsContent value="size" className="mt-4">
+                 <div className="grid grid-cols-2 gap-2 sm:gap-4">
+                    <Button onClick={() => handleBet('BigSmall', 'Big')} className="h-20 bg-orange-500 hover:bg-orange-600 text-white text-lg">Big</Button>
+                    <Button onClick={() => handleBet('BigSmall', 'Small')} className="h-20 bg-blue-500 hover:bg-blue-600 text-white text-lg">Small</Button>
+                </div>
+            </TabsContent>
+        </Tabs>
           
-          <Card>
-            <Tabs defaultValue="current">
+        <Card>
+            <CardContent className="p-4 flex flex-col gap-4">
+                <div className="flex items-center gap-4">
+                    <span className="font-bold">Bet:</span>
+                    <div className="flex-grow grid grid-cols-2 sm:grid-cols-4 gap-2">
+                         <Button variant={betAmount === 10 ? 'default' : 'outline'} onClick={() => setBetAmount(10)}>10</Button>
+                         <Button variant={betAmount === 100 ? 'default' : 'outline'} onClick={() => setBetAmount(100)}>100</Button>
+                         <Button variant={betAmount === 1000 ? 'default' : 'outline'} onClick={() => setBetAmount(1000)}>1000</Button>
+                         <Button variant={betAmount === 10000 ? 'default' : 'outline'} onClick={() => setBetAmount(10000)}>10000</Button>
+                    </div>
+                </div>
+                 <div className="flex items-center gap-4">
+                    <span className="font-bold">Mult:</span>
+                    <div className="flex-grow grid grid-cols-3 sm:grid-cols-6 gap-2">
+                        {BET_MULTIPLIERS.map(m => (
+                             <Button key={m} variant={betMultiplier === m ? 'default' : 'outline'} onClick={() => setBetMultiplier(m)}>x{m}</Button>
+                        ))}
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+
+        <Card>
+            <Tabs defaultValue="history">
               <CardHeader>
                 <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="current"><UserIcon className="mr-2 h-4 w-4"/>Your Bets This Round</TabsTrigger>
-                  <TabsTrigger value="history"><History className="mr-2 h-4 w-4"/>Your Bet History</TabsTrigger>
+                  <TabsTrigger value="history"><History className="mr-2 h-4 w-4"/>Game History</TabsTrigger>
+                  <TabsTrigger value="leaderboard"><Trophy className="mr-2 h-4 w-4"/>Leaderboard</TabsTrigger>
                 </TabsList>
               </CardHeader>
               <CardContent>
-                <TabsContent value="current">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Color</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {currentBets.length > 0 ? currentBets.map((bet, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">{bet.color}</TableCell>
-                          <TableCell className="text-right font-mono">${bet.amount.toFixed(2)}</TableCell>
-                        </TableRow>
-                      )) : <TableRow><TableCell colSpan={2} className="text-center">No bets placed this round.</TableCell></TableRow>}
-                    </TableBody>
-                  </Table>
-                </TabsContent>
                 <TabsContent value="history">
-                  {renderHistoryTable(betHistory)}
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                            <TableHead>Period</TableHead>
+                            <TableHead>Number</TableHead>
+                            <TableHead>Result</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                        {betHistory.length > 0 ? betHistory.map((result) => {
+                          const details = getNumberDetails(result.winningNumber);
+                          return (
+                            <TableRow key={result.id}>
+                                <TableCell className="font-mono text-xs">{result.id}</TableCell>
+                                <TableCell className="font-bold text-lg">{result.winningNumber}</TableCell>
+                                <TableCell className="flex items-center gap-2">
+                                    <span className={cn('font-semibold', details.color === 'Green' ? 'text-green-500' : details.color === 'Red' ? 'text-red-500' : 'text-violet-500')}>{details.color}</span>
+                                    <span className={cn('font-semibold', details.size === 'Big' ? 'text-orange-500' : 'text-blue-500')}>{details.size}</span>
+                                </TableCell>
+                            </TableRow>
+                          )
+                        }) : <TableRow><TableCell colSpan={3} className="text-center">No history yet.</TableCell></TableRow>}
+                        </TableBody>
+                    </Table>
+                </TabsContent>
+                <TabsContent value="leaderboard">
+                  <Leaderboard/>
                 </TabsContent>
               </CardContent>
             </Tabs>
           </Card>
-        </main>
-        
-        {isAdmin && (
-          <aside className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Shield className="h-5 w-5"/>Admin Panel</CardTitle>
-                <CardDescription>Control the game settings.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="ai-mode">AI Winner Selection</Label>
-                  <Switch
-                    id="ai-mode"
-                    checked={roundState?.isAiMode ?? true}
-                    onCheckedChange={(checked) => handleAdminControlChange({ isAiMode: checked })}
-                    disabled={!isRoundInProgress || !!roundState?.manualWinner}
-                  />
-                </div>
-                <CardDescription>When enabled, AI picks the color with the least total bet amount as the winner.</CardDescription>
-                <div className="space-y-2">
-                  <Label>Manual Override</Label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(Object.keys(COLOR_CONFIG) as Color[]).map(color => (
-                      <Button
-                        key={color}
-                        variant={roundState?.manualWinner === color ? 'default' : 'outline'}
-                        onClick={() => handleAdminControlChange({ manualWinner: color })}
-                        disabled={!isRoundInProgress || !!roundState?.manualWinner || !roundState?.isAiMode === false}
-                      >
-                        {color}
-                      </Button>
-                    ))}
-                  </div>
-                   {roundState?.manualWinner && <p className="text-sm text-muted-foreground pt-2">Winner set to {roundState.manualWinner}. Result will be shown when timer ends.</p>}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Current Round Totals (All Users)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  {(Object.keys(totals) as Color[]).map(color => (
-                    <li key={color} className="flex justify-between items-center">
-                      <span>{color}</span>
-                      <span className="font-mono font-semibold">${totals[color].toFixed(2)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          </aside>
-        )}
-      </div>
 
       <AlertDialog open={showResultDialog} onOpenChange={setShowResultDialog}>
         <AlertDialogContent>
@@ -481,7 +416,7 @@ export function ColorClashGame({ user, onUserUpdate }: ColorClashGameProps) {
             <AlertDialogTitle>Round Over!</AlertDialogTitle>
             {lastResult && (
                  <AlertDialogDescription>
-                    The winning color is <span className={cn("font-bold text-lg", COLOR_CONFIG[lastResult.winningColor].textColor)}>{lastResult.winningColor}</span>.
+                    The winning number is <span className="font-bold text-lg text-accent">{lastResult.winningNumber}</span>.
                     {lastResult.totalPayout > 0 ? 
                       ` You won $${lastResult.totalPayout.toFixed(2)}!`
                       : " Better luck next time!"}

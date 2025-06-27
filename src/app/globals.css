@@ -70,3 +70,29 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+.number-ball {
+    @apply w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold text-white cursor-pointer transition-all;
+    background-size: 200% 200%;
+    background-image: linear-gradient(to top right, var(--color-start) 0%, var(--color-end) 100%);
+}
+
+.number-ball.selected {
+    @apply ring-2 ring-offset-2 ring-offset-background ring-accent;
+    transform: scale(1.1);
+}
+
+.number-ball-red {
+    --color-start: #ef4444; /* red-500 */
+    --color-end: #f87171; /* red-400 */
+}
+
+.number-ball-green {
+    --color-start: #22c55e; /* green-500 */
+    --color-end: #4ade80; /* green-400 */
+}
+
+.number-ball-violet {
+    --color-start: #8b5cf6; /* violet-500 */
+    --color-end: #a78bfa; /* violet-400 */
+}

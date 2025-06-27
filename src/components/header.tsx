@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -6,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { authService } from '@/lib/auth';
 import type { User } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { LogOut, User as UserIcon, Shield } from 'lucide-react';
+import { LogOut, User as UserIcon, Shield, LifeBuoy } from 'lucide-react';
 import { Logo } from './logo';
 
 export default function Header() {
@@ -43,7 +44,7 @@ export default function Header() {
           <Logo className="h-8 w-8" />
           <span className="font-bold text-lg">Color Clash</span>
         </Link>
-        <nav className="flex items-center gap-4">
+        <nav className="flex items-center gap-2 md:gap-4">
           {user ? (
             <>
               {user.role === 'admin' && (
@@ -53,6 +54,9 @@ export default function Header() {
               )}
               <Button variant="ghost" asChild>
                 <Link href="/dashboard"><UserIcon/>Dashboard</Link>
+              </Button>
+              <Button variant="ghost" asChild>
+                <Link href="/support"><LifeBuoy/>Support</Link>
               </Button>
               <Button variant="outline" onClick={handleLogout}>
                 <LogOut className="mr-2 h-4 w-4" />

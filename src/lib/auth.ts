@@ -4,9 +4,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { User } from './types';
-
-const USERS_KEY = 'color_clash_users';
-const CURRENT_USER_KEY = 'color_clash_current_user';
+import { USERS_KEY, CURRENT_USER_KEY } from './constants';
 
 const getStoredUsers = (): User[] => {
   if (typeof window === 'undefined') return [];
@@ -15,9 +13,10 @@ const getStoredUsers = (): User[] => {
     return JSON.parse(usersJson);
   }
   // Create a default admin user if none exist
-  const adminUser: User = { id: uuidv4(), email: 'imblaster2019@gmail.com', password: 'password', role: 'admin', balance: 9999 };
-  localStorage.setItem(USERS_KEY, JSON.stringify([adminUser]));
-  return [adminUser];
+  const adminUser: User = { id: 'admin_user_001', email: 'imblaster2019@gmail.com', password: 'password', role: 'admin', balance: 99999 };
+  const regularUser: User = { id: 'regular_user_001', email: 'user@example.com', password: 'password', role: 'user', balance: 1000 };
+  localStorage.setItem(USERS_KEY, JSON.stringify([adminUser, regularUser]));
+  return [adminUser, regularUser];
 };
 
 const storeUsers = (users: User[]) => {
@@ -78,14 +77,14 @@ export const authService = {
     return userJson ? JSON.parse(userJson) : null;
   },
   
-  // Gets all users but omits their passwords for security
-  getUsers: (): Omit<User, 'password'>[] => {
+  getUsers: (withPassword = false): (User | Omit<User, 'password'>)[] => {
     const users = getStoredUsers();
-    // Return users without passwords
+    if (withPassword) {
+        return users;
+    }
     return users.map(({ password, ...user }) => user);
   },
   
-  // For a user to update their own credentials
   updateUser: (id: string, email: string, newPassword?: string) => {
     const users = getStoredUsers();
     const userIndex = users.findIndex(u => u.id === id);
@@ -113,7 +112,6 @@ export const authService = {
     return updatedUser;
   },
 
-  // For an admin to update any user's full profile
   updateUserByAdmin: (id: string, data: Partial<User>) => {
     let users = getStoredUsers();
     const userIndex = users.findIndex(u => u.id === id);
@@ -121,14 +119,10 @@ export const authService = {
         throw new Error("User not found");
     }
     
-    // Ensure new email isn't a duplicate
     if (data.email && users.some(u => u.email === data.email && u.id !== id)) {
       throw new Error("Email is already in use by another account.");
     }
     
-    // The user edit dialog ensures that `data.password` is either a valid new password
-    // or the property is deleted entirely if the field was empty.
-    // A simple spread merge is sufficient and robust.
     const updatedUser = { 
       ...users[userIndex], 
       ...data,
@@ -137,7 +131,6 @@ export const authService = {
     users[userIndex] = updatedUser;
     storeUsers(users);
 
-    // If the updated user is the current user, update their session
     const currentUser = authService.getCurrentUser();
     if (currentUser && currentUser.id === id) {
         storeCurrentUser(updatedUser);
@@ -146,14 +139,14 @@ export const authService = {
     return updatedUser;
   },
 
-  // For a user to add to their own balance
   updateBalance: (id: string, amount: number) => {
-    if(amount <= 0) throw new Error("Amount must be positive.");
     const users = getStoredUsers();
     const userIndex = users.findIndex(u => u.id === id);
     if (userIndex === -1) throw new Error("User not found");
 
     const newBalance = users[userIndex].balance + amount;
+    if (newBalance < 0) throw new Error("Insufficient funds.");
+    
     users[userIndex].balance = newBalance;
     storeUsers(users);
 
@@ -163,8 +156,18 @@ export const authService = {
     }
     return users[userIndex];
   },
+  
+  updateMultipleUsers: (updatedUsers: User[]) => {
+    let users = getStoredUsers();
+    updatedUsers.forEach(updatedUser => {
+        const userIndex = users.findIndex(u => u.id === updatedUser.id);
+        if(userIndex !== -1) {
+            users[userIndex] = updatedUser;
+        }
+    });
+    storeUsers(users);
+  },
 
-  // For an admin to create a new user
   addUser: (data: Omit<User, 'id'>) => {
     let users = getStoredUsers();
     if (users.some(u => u.email === data.email)) {
@@ -179,7 +182,6 @@ export const authService = {
     return newUser;
   },
 
-  // For an admin to delete a user
   deleteUser: (id: string) => {
     let users = getStoredUsers();
     const newUsers = users.filter(u => u.id !== id);

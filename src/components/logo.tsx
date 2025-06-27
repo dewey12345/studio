@@ -4,8 +4,8 @@ export function Logo({ className, ...props }: React.SVGProps<SVGSVGElement>) {
     return (
         <svg
             xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 100 100"
-            className={cn("h-6 w-6", className)}
+            viewBox="0 0 200 60"
+            className={cn("h-8", className)}
             {...props}
         >
             <defs>
@@ -14,28 +14,16 @@ export function Logo({ className, ...props }: React.SVGProps<SVGSVGElement>) {
                     <stop offset="100%" style={{ stopColor: 'hsl(var(--accent))', stopOpacity: 1 }} />
                 </linearGradient>
             </defs>
-            <path
-                d="M20,20 L80,20 L80,80 L20,80 Z"
-                stroke="url(#grad1)"
-                strokeWidth="12"
-                fill="transparent"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-            />
-            <path
-                d="M35,35 L65,65"
-                stroke="hsl(var(--foreground))"
-                strokeWidth="10"
-                fill="transparent"
-                strokeLinecap="round"
-            />
-             <path
-                d="M65,35 L35,65"
-                stroke="hsl(var(--foreground))"
-                strokeWidth="10"
-                fill="transparent"
-                strokeLinecap="round"
-            />
+            <text x="10" y="45" fontFamily="Arial, Helvetica, sans-serif" fontSize="40" fontWeight="bold" fill="url(#grad1)">
+                9LIVE
+            </text>
+            <text x="135" y="30" fontFamily="Arial, Helvetica, sans-serif" fontSize="14" fill="hsl(var(--foreground))">
+                SPORTS
+            </text>
+             <text x="135" y="50" fontFamily="Arial, Helvetica, sans-serif" fontSize="14" fill="hsl(var(--foreground))">
+                CLUB
+            </text>
+            <rect x="0" y="0" width="200" height="60" stroke="hsl(var(--accent))" strokeWidth="2" fill="none" rx="5"/>
         </svg>
     );
 }
