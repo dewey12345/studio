@@ -96,3 +96,24 @@ body {
     --color-start: #8b5cf6; /* violet-500 */
     --color-end: #a78bfa; /* violet-400 */
 }
+
+.has-bet {
+  @apply relative ring-2 ring-accent ring-offset-2 ring-offset-background;
+}
+.has-bet::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  animation: wave-pulse 1.5s infinite;
+  pointer-events: none;
+}
+
+@keyframes wave-pulse {
+  0% {
+    box-shadow: 0 0 0 0 hsl(var(--accent) / 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 1rem hsl(var(--accent) / 0);
+  }
+}

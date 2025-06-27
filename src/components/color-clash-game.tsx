@@ -53,6 +53,11 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
 
   const isRoundInProgress = roundState ? Date.now() < roundState.endTime : false;
 
+  const currentUserBets = useMemo(() => {
+    if (!roundState) return [];
+    return roundState.bets.filter(b => b.userId === user.id);
+  }, [roundState, user.id]);
+
   useEffect(() => {
     const globalHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
     const userHistory = globalHistory.map(round => {
@@ -318,6 +323,10 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   
   const lastResult = betHistory[0];
 
+  const hasBetOnColor = (color: string) => currentUserBets.some(b => b.type === 'Color' && b.value === color);
+  const hasBetOnNumber = (num: number) => currentUserBets.some(b => b.type === 'Number' && b.value === num);
+  const hasBetOnBigSmall = (size: string) => currentUserBets.some(b => b.type === 'BigSmall' && b.value === size);
+
   return (
     <div className="space-y-6">
       <header className="flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -362,9 +371,9 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
             </TabsList>
             <TabsContent value="color" className="mt-4">
                 <div className="grid grid-cols-3 gap-2 sm:gap-4">
-                    <Button onClick={() => handleBet('Color', 'Green')} className="h-20 bg-green-500 hover:bg-green-600 text-white text-lg">Green</Button>
-                    <Button onClick={() => handleBet('Color', 'Violet')} className="h-20 bg-violet-500 hover:bg-violet-600 text-white text-lg">Violet</Button>
-                    <Button onClick={() => handleBet('Color', 'Red')} className="h-20 bg-red-500 hover:bg-red-600 text-white text-lg">Red</Button>
+                    <Button onClick={() => handleBet('Color', 'Green')} className={cn("h-20 bg-green-500 hover:bg-green-600 text-white text-lg", hasBetOnColor('Green') && 'has-bet')}>Green</Button>
+                    <Button onClick={() => handleBet('Color', 'Violet')} className={cn("h-20 bg-violet-500 hover:bg-violet-600 text-white text-lg", hasBetOnColor('Violet') && 'has-bet')}>Violet</Button>
+                    <Button onClick={() => handleBet('Color', 'Red')} className={cn("h-20 bg-red-500 hover:bg-red-600 text-white text-lg", hasBetOnColor('Red') && 'has-bet')}>Red</Button>
                 </div>
             </TabsContent>
             <TabsContent value="number" className="mt-4">
@@ -375,7 +384,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                         return (
                             <div key={num}
                                 onClick={() => handleNumberSelect(num)}
-                                className={cn('number-ball', details.className, selectedNumbers.includes(num) && 'selected' )}
+                                className={cn('number-ball', details.className, selectedNumbers.includes(num) && 'selected', hasBetOnNumber(num) && 'has-bet' )}
                             >
                                 {num}
                             </div>
@@ -386,8 +395,8 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
             </TabsContent>
             <TabsContent value="size" className="mt-4">
                  <div className="grid grid-cols-2 gap-2 sm:gap-4">
-                    <Button onClick={() => handleBet('BigSmall', 'Big')} className="h-20 bg-orange-500 hover:bg-orange-600 text-white text-lg">Big</Button>
-                    <Button onClick={() => handleBet('BigSmall', 'Small')} className="h-20 bg-blue-500 hover:bg-blue-600 text-white text-lg">Small</Button>
+                    <Button onClick={() => handleBet('BigSmall', 'Big')} className={cn("h-20 bg-orange-500 hover:bg-orange-600 text-white text-lg", hasBetOnBigSmall('Big') && 'has-bet')}>Big</Button>
+                    <Button onClick={() => handleBet('BigSmall', 'Small')} className={cn("h-20 bg-blue-500 hover:bg-blue-600 text-white text-lg", hasBetOnBigSmall('Small') && 'has-bet')}>Small</Button>
                 </div>
             </TabsContent>
         </Tabs>
