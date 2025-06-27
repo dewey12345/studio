@@ -39,10 +39,6 @@ const aiDetermineWinnerFlow = ai.defineFlow(
   },
   async ({ bets, difficulty, apiKey }) => {
     
-    if (!apiKey) {
-      throw new Error("API Key is not configured. An admin must set it in the dashboard's API Settings.");
-    }
-
     const totalPayouts = getPayoutsByNumber(bets as Bet[]);
     
     let payoutsSummary = "Total Payout by Winning Number:\n";

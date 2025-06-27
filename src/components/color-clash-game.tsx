@@ -138,19 +138,31 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
         winningNumber = gameSettings.manualWinner;
     } else {
       const apiKey = apiKeyService.getApiKey();
-      try {
-        const result = await aiDetermineWinner({
-          bets: currentState.bets,
-          difficulty: gameSettings.difficulty,
-          apiKey: apiKey || undefined,
-        });
-        winningNumber = result.winningNumber;
-      } catch (error: any) {
-        console.error("AI failed to select a winner:", error);
+      if (!apiKey) {
         if (user.role === 'admin') {
-            toast({ title: "AI Error", description: `Could not determine winner: ${error.message}. Selecting randomly.`, variant: "destructive", duration: 5000 });
+          toast({
+            title: 'AI Not Configured',
+            description: 'API Key is missing. Selecting winner randomly. Please set it in the admin dashboard.',
+            variant: 'destructive',
+            duration: 5000,
+          });
         }
         winningNumber = Math.floor(Math.random() * 10);
+      } else {
+        try {
+          const result = await aiDetermineWinner({
+            bets: currentState.bets,
+            difficulty: gameSettings.difficulty,
+            apiKey: apiKey,
+          });
+          winningNumber = result.winningNumber;
+        } catch (error: any) {
+          console.error("AI failed to select a winner:", error);
+          if (user.role === 'admin') {
+              toast({ title: "AI Error", description: `Could not determine winner: ${error.message}. Selecting randomly.`, variant: "destructive", duration: 5000 });
+          }
+          winningNumber = Math.floor(Math.random() * 10);
+        }
       }
     }
     
