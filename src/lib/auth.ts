@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { User } from './types';
 import { USERS_KEY, CURRENT_USER_KEY } from './constants';
 import { apiKeyService } from './apiKeyService';
+import { paymentService } from './paymentService';
 
 const getStoredUsers = (): User[] => {
   if (typeof window === 'undefined') return [];
@@ -23,6 +24,10 @@ const getStoredUsers = (): User[] => {
   if (!apiKeyService.getApiKey()) {
     apiKeyService.setApiKey('YOUR_GEMINI_API_KEY_HERE');
   }
+
+  // Set default payment settings
+  paymentService.getPaymentSettings();
+
 
   return [adminUser, regularUser];
 };

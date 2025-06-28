@@ -9,14 +9,16 @@ import { authService } from '@/lib/auth';
 import { supportService } from '@/lib/supportService';
 import { withdrawalService } from '@/lib/withdrawService';
 import { apiKeyService } from '@/lib/apiKeyService';
-import type { User, SupportTicket, WithdrawalRequest, GameSettings, Bet, RoundResult } from '@/lib/types';
+import { paymentService } from '@/lib/paymentService';
+
+import type { User, SupportTicket, WithdrawalRequest, GameSettings, Bet, RoundResult, PaymentSettings, Color, BigSmall } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { Users, KeyRound, PlusCircle, Edit, Trash2, Shield, LifeBuoy, Banknote, Trophy, Gamepad2, Settings, CloudCog, History, CircleDotDashed } from 'lucide-react';
+import { Users, KeyRound, PlusCircle, Edit, Trash2, Shield, LifeBuoy, Banknote, Trophy, Gamepad2, Settings, CloudCog, History, CircleDotDashed, CreditCard } from 'lucide-react';
 import { UserEditDialog } from './user-edit-dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -25,6 +27,8 @@ import { GAME_SETTINGS_KEY, ROUND_STATE_KEY, GLOBAL_ROUND_HISTORY_KEY } from '@/
 import Leaderboard from './leaderboard';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from './ui/scroll-area';
+import { getNumberDetails } from '@/lib/game-logic';
+import Image from 'next/image';
 
 interface AdminPanelProps {
   adminUser: User;
@@ -39,7 +43,6 @@ type EnrichedBet = Bet & {
     winningNumber?: number;
 };
 
-
 export default function AdminPanel({ adminUser }: AdminPanelProps) {
   const [users, setUsers] = useState<(User)[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -47,14 +50,16 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [gameSettings, setGameSettings] = useState<GameSettings>({ difficulty: 'easy' });
-  const [predictionNumber, setPredictionNumber] = useState<string>('');
   const [apiKey, setApiKey] = useState('');
+  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings>({ qrCodeUrl: '', telegramUrl: '' });
   
   const [liveBets, setLiveBets] = useState<SyncedBet[]>([]);
   const [historicalBets, setHistoricalBets] = useState<EnrichedBet[]>([]);
   const [historySearchTerm, setHistorySearchTerm] = useState('');
 
   const { toast } = useToast();
+  
+  const userMap = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
 
   const loadData = useCallback(() => {
     const allUsers = authService.getUsers(true) as User[];
@@ -64,14 +69,15 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     const settings = localStorage.getItem(GAME_SETTINGS_KEY);
     if(settings) setGameSettings(JSON.parse(settings));
     setApiKey(apiKeyService.getApiKey() || '');
+    setPaymentSettings(paymentService.getPaymentSettings());
     
     // Load betting history
     const roundHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
-    const userMap = new Map(allUsers.map(u => [u.id, u]));
+    const userMapForHistory = new Map(allUsers.map(u => [u.id, u]));
     const allBets: EnrichedBet[] = [];
     roundHistory.forEach(round => {
-        round.bets.forEach(bet => {
-            const user = userMap.get(bet.userId);
+        (round.bets || []).forEach(bet => {
+            const user = userMapForHistory.get(bet.userId);
             allBets.push({
                 ...bet,
                 userEmail: user?.email || 'Unknown',
@@ -81,7 +87,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
             });
         });
     });
-    setHistoricalBets(allBets);
+    setHistoricalBets(allBets.sort((a, b) => b.timestamp - a.timestamp));
 
   }, []);
 
@@ -94,8 +100,10 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
         if (roundStateRaw) {
             const roundState = JSON.parse(roundStateRaw);
             setLiveBets(roundState.bets || []);
+        } else {
+            setLiveBets([]);
         }
-    }, 2000);
+    }, 1000);
 
     return () => {
         window.removeEventListener('storage', loadData);
@@ -118,15 +126,26 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     return filteredHistoricalBets.reduce((sum, bet) => sum + bet.amount, 0);
   }, [filteredHistoricalBets]);
 
+  const liveBetTotals = useMemo(() => {
+    const totals = {
+        color: { Red: 0, Green: 0, Violet: 0 },
+        number: Array(10).fill(0),
+        size: { Big: 0, Small: 0 },
+        total: 0,
+    };
 
-  const onAdminSubmit = (data: UpdateFormValues) => {
-    try {
-      authService.updateUser(adminUser.id, data.email, data.password || undefined);
-      toast({ title: 'Success', description: 'Your credentials have been updated.' });
-    } catch (error: any) {
-      toast({ title: 'Update Failed', description: error.message, variant: 'destructive' });
-    }
-  };
+    liveBets.forEach(bet => {
+        totals.total += bet.amount;
+        if(bet.type === 'Color') {
+            totals.color[bet.value as Color] += bet.amount;
+        } else if (bet.type === 'Number') {
+            totals.number[bet.value as number] += bet.amount;
+        } else if (bet.type === 'BigSmall') {
+            totals.size[bet.value as BigSmall] += bet.amount;
+        }
+    });
+    return totals;
+  }, [liveBets]);
 
   const handleAddUser = () => {
     setEditingUser(null);
@@ -192,45 +211,50 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     const updatedSettings = { ...gameSettings, ...newSettings };
     setGameSettings(updatedSettings);
     localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(updatedSettings));
-    toast({ title: 'Success', description: 'Game difficulty updated.' });
+    toast({ title: 'Success', description: 'Game settings updated.' });
   }
 
-  const handleSetPrediction = () => {
-    const num = parseInt(predictionNumber, 10);
-    if(isNaN(num) || num < 0 || num > 9) {
-        toast({ title: "Invalid Number", description: "Please enter a number between 0 and 9.", variant: "destructive"});
-        return;
-    }
-    const currentSettings = JSON.parse(localStorage.getItem(GAME_SETTINGS_KEY) || '{}')
-    const newSettings = { ...currentSettings, manualWinner: num };
+  const handleSetPrediction = (key: 'manualWinner' | 'manualWinnerColor' | 'manualWinnerSize', value: any) => {
+    const currentSettings = JSON.parse(localStorage.getItem(GAME_SETTINGS_KEY) || '{}');
+    
+    // Clear other manual settings to avoid conflicts
+    delete currentSettings.manualWinner;
+    delete currentSettings.manualWinnerColor;
+    delete currentSettings.manualWinnerSize;
+
+    const newSettings = { ...currentSettings, [key]: value };
+
     localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(newSettings));
     setGameSettings(newSettings);
-    toast({ title: "Prediction Set", description: `Next winner will be ${num}. This will be cleared after one round.` });
-    setPredictionNumber('');
-  }
-
+    toast({ title: "Prediction Set", description: `Next winner override is set to ${value}. This will be cleared after one round.` });
+  };
+  
   const handleSaveApiKey = () => {
     apiKeyService.setApiKey(apiKey);
     toast({ title: "Success", description: "API Key has been saved." });
   }
-  
-  const userMap = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
 
+  const handleSavePaymentSettings = () => {
+      paymentService.setPaymentSettings(paymentSettings);
+      toast({ title: "Success", description: "Payment settings have been saved." });
+  }
+  
   return (
     <div className="space-y-8">
       <h1 className="text-3xl font-bold flex items-center gap-2"><Shield /> Admin Dashboard</h1>
 
-      <Tabs defaultValue="users" className="w-full">
+      <Tabs defaultValue="live" className="w-full">
         <ScrollArea className="w-full pb-2">
-            <TabsList className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 h-auto w-max">
-            <TabsTrigger value="users"><Users />User Management</TabsTrigger>
+            <TabsList className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-9 h-auto w-max">
+            <TabsTrigger value="live"><CircleDotDashed />Live</TabsTrigger>
+            <TabsTrigger value="game"><Gamepad2/>Game Control</TabsTrigger>
+            <TabsTrigger value="history"><History />Bet History</TabsTrigger>
+            <TabsTrigger value="users"><Users />Users</TabsTrigger>
             <TabsTrigger value="withdrawals"><Banknote/>Withdrawals</TabsTrigger>
             <TabsTrigger value="support"><LifeBuoy/>Support</TabsTrigger>
             <TabsTrigger value="leaderboard"><Trophy/>Leaderboard</TabsTrigger>
-            <TabsTrigger value="live"><CircleDotDashed />Live Bets</TabsTrigger>
-            <TabsTrigger value="history"><History />Bet History</TabsTrigger>
-            <TabsTrigger value="game"><Gamepad2/>Game Control</TabsTrigger>
-            <TabsTrigger value="api"><CloudCog/>API Settings</TabsTrigger>
+            <TabsTrigger value="payment"><CreditCard />Payment</TabsTrigger>
+            <TabsTrigger value="api"><CloudCog/>API</TabsTrigger>
             </TabsList>
         </ScrollArea>
         
@@ -395,40 +419,42 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2"><CircleDotDashed />Live Round Bets</CardTitle>
-                    <CardDescription>Bets placed in the current round. Updates every 2 seconds.</CardDescription>
+                    <CardDescription>Bets placed in the current round. Updates in real-time.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Time</TableHead>
-                                <TableHead>User</TableHead>
-                                <TableHead>Phone</TableHead>
-                                <TableHead>Bet Type</TableHead>
-                                <TableHead>Bet Value</TableHead>
-                                <TableHead className="text-right">Amount</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {liveBets.length > 0 ? liveBets.map((bet) => {
-                                const user = userMap.get(bet.userId);
-                                return (
-                                <TableRow key={bet.timestamp}>
-                                    <TableCell>{new Date(bet.timestamp).toLocaleTimeString()}</TableCell>
-                                    <TableCell>{user?.email || 'N/A'}</TableCell>
-                                    <TableCell>{user?.phone || 'N/A'}</TableCell>
-                                    <TableCell>{bet.type}</TableCell>
-                                    <TableCell>{bet.value}</TableCell>
-                                    <TableCell className="text-right">₹{bet.amount.toFixed(2)}</TableCell>
-                                </TableRow>
-                                )
-                            }) : (
+                    <ScrollArea className="h-[400px] w-full">
+                        <Table>
+                            <TableHeader>
                                 <TableRow>
-                                    <TableCell colSpan={6} className="text-center">No bets placed in this round yet.</TableCell>
+                                    <TableHead>Time</TableHead>
+                                    <TableHead>User</TableHead>
+                                    <TableHead>Phone</TableHead>
+                                    <TableHead>Bet Type</TableHead>
+                                    <TableHead>Bet Value</TableHead>
+                                    <TableHead className="text-right">Amount</TableHead>
                                 </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
+                            </TableHeader>
+                            <TableBody>
+                                {liveBets.length > 0 ? [...liveBets].reverse().map((bet) => {
+                                    const user = userMap.get(bet.userId);
+                                    return (
+                                    <TableRow key={bet.timestamp}>
+                                        <TableCell>{new Date(bet.timestamp).toLocaleTimeString()}</TableCell>
+                                        <TableCell>{user?.email || 'N/A'}</TableCell>
+                                        <TableCell>{user?.phone || 'N/A'}</TableCell>
+                                        <TableCell>{bet.type}</TableCell>
+                                        <TableCell>{bet.value}</TableCell>
+                                        <TableCell className="text-right">₹{bet.amount.toFixed(2)}</TableCell>
+                                    </TableRow>
+                                    )
+                                }) : (
+                                    <TableRow>
+                                        <TableCell colSpan={6} className="text-center pt-8">No bets placed in this round yet.</TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </ScrollArea>
                 </CardContent>
             </Card>
         </TabsContent>
@@ -499,9 +525,9 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="space-y-2">
-                        <Label htmlFor="difficulty">Game Difficulty</Label>
+                        <Label>Game Difficulty</Label>
                         <Select onValueChange={(value: 'easy' | 'moderate' | 'hard') => handleGameSettingsChange({ difficulty: value })} value={gameSettings.difficulty}>
-                            <SelectTrigger id="difficulty" className="w-[200px]">
+                            <SelectTrigger className="w-[200px]">
                                 <SelectValue placeholder="Select difficulty"/>
                             </SelectTrigger>
                             <SelectContent>
@@ -510,16 +536,77 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
                                 <SelectItem value="hard">Hard</SelectItem>
                             </SelectContent>
                         </Select>
-                        <p className="text-sm text-muted-foreground">Easy: AI favors lowest bet. Hard: AI tries to make most players lose.</p>
+                        <p className="text-sm text-muted-foreground">Easy: AI favors lowest payout for house. Hard: AI favors highest payout for house.</p>
+                    </div>
+                    <div className="space-y-4">
+                        <Label className="font-bold text-base">Manual Winner Override</Label>
+                        <p className="text-sm text-muted-foreground">Set the winning outcome for the next round. This will override the AI. The setting is for one round only.</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                                <Label>Winning Number</Label>
+                                <Select onValueChange={(v) => handleSetPrediction('manualWinner', parseInt(v,10))} value={gameSettings.manualWinner?.toString() ?? ""}>
+                                    <SelectTrigger><SelectValue placeholder="Select Number"/></SelectTrigger>
+                                    <SelectContent>{Array.from({length: 10}).map((_, i) => (<SelectItem key={i} value={i.toString()}>{i}</SelectItem>))}</SelectContent>
+                                </Select>
+                            </div>
+                             <div className="space-y-2">
+                                <Label>Winning Color</Label>
+                                <Select onValueChange={(v) => handleSetPrediction('manualWinnerColor', v as Color)} value={gameSettings.manualWinnerColor ?? ""}>
+                                    <SelectTrigger><SelectValue placeholder="Select Color"/></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="Red">Red</SelectItem>
+                                        <SelectItem value="Green">Green</SelectItem>
+                                        <SelectItem value="Violet">Violet</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                             <div className="space-y-2">
+                                <Label>Winning Size</Label>
+                                <Select onValueChange={(v) => handleSetPrediction('manualWinnerSize', v as BigSmall)} value={gameSettings.manualWinnerSize ?? ""}>
+                                    <SelectTrigger><SelectValue placeholder="Select Size"/></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="Big">Big</SelectItem>
+                                        <SelectItem value="Small">Small</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+        </TabsContent>
+
+        <TabsContent value="payment" className="mt-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><CreditCard />Payment Settings</CardTitle>
+                    <CardDescription>Configure the QR code and Telegram link for user deposits.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="qr-url">Payment QR Code URL</Label>
+                        <Input 
+                            id="qr-url" 
+                            value={paymentSettings.qrCodeUrl}
+                            onChange={(e) => setPaymentSettings(prev => ({...prev, qrCodeUrl: e.target.value}))}
+                            placeholder="https://example.com/payment.png"
+                        />
+                         {paymentSettings.qrCodeUrl && (
+                            <div className="p-4 border rounded-md bg-muted flex justify-center">
+                                <Image src={paymentSettings.qrCodeUrl} alt="QR Code Preview" width={200} height={200} data-ai-hint="payment qr" />
+                            </div>
+                         )}
                     </div>
                      <div className="space-y-2">
-                        <Label htmlFor="prediction">Manual Prediction</Label>
-                        <div className="flex gap-2">
-                            <Input id="prediction" type="number" min="0" max="9" value={predictionNumber} onChange={(e) => setPredictionNumber(e.target.value)} placeholder="Enter winning number (0-9)" className="w-[250px]"/>
-                            <Button onClick={handleSetPrediction}>Set Winner</Button>
-                        </div>
-                        <p className="text-sm text-muted-foreground">Set the winning number for the next round. This will override the AI. The setting is for one round only.</p>
+                        <Label htmlFor="telegram-url">Telegram Contact URL</Label>
+                        <Input 
+                            id="telegram-url" 
+                            value={paymentSettings.telegramUrl}
+                            onChange={(e) => setPaymentSettings(prev => ({...prev, telegramUrl: e.target.value}))}
+                            placeholder="https://t.me/your-username"
+                        />
                     </div>
+                    <Button onClick={handleSavePaymentSettings}>Save Payment Settings</Button>
                 </CardContent>
             </Card>
         </TabsContent>

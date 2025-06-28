@@ -56,10 +56,17 @@ export interface WithdrawalRequest {
 export interface GameSettings {
     difficulty: Difficulty;
     manualWinner?: number;
+    manualWinnerColor?: Color;
+    manualWinnerSize?: BigSmall;
 }
 
 export interface LeaderboardEntry {
     userId: string;
     userName: string;
     totalWinnings: number;
+}
+
+export interface PaymentSettings {
+    qrCodeUrl: string;
+    telegramUrl: string;
 }

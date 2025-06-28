@@ -17,6 +17,7 @@ import { authService } from '@/lib/auth';
 import { withdrawalService } from '@/lib/withdrawService';
 import { useEffect, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { AddFundsDialog } from './add-funds-dialog';
 
 interface UserDashboardProps {
     user: User;
@@ -29,11 +30,6 @@ const updateSchema = z.object({
 });
 type UpdateFormValues = z.infer<typeof updateSchema>;
 
-const fundsSchema = z.object({
-    amount: z.coerce.number().positive("Must be a positive number.").min(1, "Amount must be at least ₹1."),
-})
-type FundsFormValues = z.infer<typeof fundsSchema>;
-
 const withdrawSchema = z.object({
     amount: z.coerce.number().positive("Must be a positive number.").min(1, "Amount must be at least ₹1."),
 })
@@ -43,6 +39,7 @@ type WithdrawFormValues = z.infer<typeof withdrawSchema>;
 export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps) {
   const { toast } = useToast();
   const [withdrawalHistory, setWithdrawalHistory] = useState<WithdrawalRequest[]>([]);
+  const [isFundsDialogOpen, setIsFundsDialogOpen] = useState(false);
 
   useEffect(() => {
     setWithdrawalHistory(withdrawalService.getRequestsForUser(user.id));
@@ -54,13 +51,6 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
       email: user.email,
       password: '',
     },
-  });
-
-  const fundsForm = useForm<FundsFormValues>({
-    resolver: zodResolver(fundsSchema),
-    defaultValues: {
-        amount: 100,
-    }
   });
 
    const withdrawForm = useForm<WithdrawFormValues>({
@@ -76,17 +66,6 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
         onUserUpdate(updatedUser);
         accountForm.reset({ email: data.email, password: '' });
         toast({ title: "Success", description: "Your account has been updated." });
-    } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
-    }
-  };
-  
-  const handleAddFunds = (data: FundsFormValues) => {
-    try {
-        const updatedUser = authService.updateBalance(user.id, data.amount);
-        onUserUpdate(updatedUser);
-        fundsForm.reset();
-        toast({ title: "Success", description: `₹${data.amount.toFixed(2)} has been added to your balance.` });
     } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -139,14 +118,9 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
                                 </AccordionContent>
                             </AccordionItem>
                              <AccordionItem value="funds">
-                                <AccordionTrigger><Wallet className="mr-2"/>Add Funds</AccordionTrigger>
+                                <AccordionTrigger onClick={() => setIsFundsDialogOpen(true)}><Wallet className="mr-2"/>Add Funds</AccordionTrigger>
                                 <AccordionContent>
-                                     <Form {...fundsForm}>
-                                        <form onSubmit={fundsForm.handleSubmit(handleAddFunds)} className="space-y-4">
-                                            <FormField control={fundsForm.control} name="amount" render={({field}) => (<FormItem><FormLabel>Amount</FormLabel><FormControl><Input type="number" placeholder="100" {...field}/></FormControl><FormMessage/></FormItem>)} />
-                                            <Button type="submit" className="w-full">Add to Balance</Button>
-                                        </form>
-                                    </Form>
+                                     <p className="text-sm text-muted-foreground p-4 text-center">Click the heading above to open the Add Funds dialog and follow the instructions.</p>
                                 </AccordionContent>
                             </AccordionItem>
                              <AccordionItem value="withdraw">
@@ -191,8 +165,7 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
                 </Card>
             </div>
         </div>
+        <AddFundsDialog isOpen={isFundsDialogOpen} onOpenChange={setIsFundsDialogOpen} />
     </div>
   );
 }
-
-    

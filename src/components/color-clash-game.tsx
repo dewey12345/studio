@@ -99,8 +99,10 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     const settingsRaw = localStorage.getItem(GAME_SETTINGS_KEY);
     if(settingsRaw) {
       const settings = JSON.parse(settingsRaw);
-      if(settings.manualWinner !== undefined) {
+      if(settings.manualWinner !== undefined || settings.manualWinnerColor !== undefined || settings.manualWinnerSize !== undefined) {
         delete settings.manualWinner;
+        delete settings.manualWinnerColor;
+        delete settings.manualWinnerSize;
         localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(settings));
       }
     }
@@ -136,9 +138,19 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
 
     if (gameSettings.manualWinner !== undefined && gameSettings.manualWinner !== null) {
         winningNumber = gameSettings.manualWinner;
+    } else if (gameSettings.manualWinnerColor) {
+        const possibleNumbers = Object.entries(NUMBER_CONFIG)
+            .filter(([_, details]) => details.color === gameSettings.manualWinnerColor)
+            .map(([numStr]) => parseInt(numStr));
+        winningNumber = possibleNumbers[Math.floor(Math.random() * possibleNumbers.length)];
+    } else if (gameSettings.manualWinnerSize) {
+        const possibleNumbers = Object.entries(NUMBER_CONFIG)
+            .filter(([_, details]) => details.size === gameSettings.manualWinnerSize)
+            .map(([numStr]) => parseInt(numStr));
+        winningNumber = possibleNumbers[Math.floor(Math.random() * possibleNumbers.length)];
     } else {
       const apiKey = apiKeyService.getApiKey();
-      if (!apiKey) {
+      if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
         if (user.role === 'admin') {
           toast({
             title: 'AI Not Configured',
@@ -159,7 +171,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
         } catch (error: any) {
           console.error("AI failed to select a winner:", error);
           if (user.role === 'admin') {
-              toast({ title: "AI Error", description: `Could not determine winner: ${error.message}. Selecting randomly.`, variant: "destructive", duration: 5000 });
+              toast({ title: "AI Error", description: `Could not determine winner. Selecting randomly.`, variant: "destructive", duration: 5000 });
           }
           winningNumber = Math.floor(Math.random() * 10);
         }
