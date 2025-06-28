@@ -473,8 +473,17 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                     <TableBody>
                     {betHistory.length > 0 ? betHistory.map((result) => {
                         const details = getNumberDetails(result.winningNumber);
-                        const totalBetAmount = (result.bets || []).reduce((sum, bet) => sum + bet.amount, 0);
-                        const currentNetResult = result.totalPayout - totalBetAmount;
+                        const { totalProfit, totalLosses } = (result.bets || []).reduce(
+                            (acc, bet) => {
+                                const isWin = (bet.payout || 0) > 0;
+                                if (isWin) {
+                                    acc.totalProfit += (bet.payout! - bet.amount);
+                                } else {
+                                    acc.totalLosses += bet.amount;
+                                }
+                                return acc;
+                            }, { totalProfit: 0, totalLosses: 0 }
+                        );
 
                         return (
                         <TableRow key={result.id}>
@@ -507,8 +516,10 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                                     <span>No Bet</span>
                                 )}
                             </TableCell>
-                            <TableCell className={`text-right font-mono font-semibold ${currentNetResult >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                {currentNetResult >= 0 ? `+₹${currentNetResult.toFixed(2)}` : `-₹${Math.abs(currentNetResult).toFixed(2)}`}
+                            <TableCell className="text-right font-mono font-semibold">
+                                <span className="text-green-400 whitespace-nowrap">+₹{totalProfit.toFixed(2)}</span>
+                                <span className="text-muted-foreground"> / </span>
+                                <span className="text-red-400 whitespace-nowrap">-₹{totalLosses.toFixed(2)}</span>
                             </TableCell>
                         </TableRow>
                         )

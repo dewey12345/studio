@@ -66,12 +66,13 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     setUsers(allUsers);
     setSupportTickets(supportService.getAllTickets());
     setWithdrawalRequests(withdrawalService.getAllRequests());
+    
     const settings = localStorage.getItem(GAME_SETTINGS_KEY);
     if(settings) setGameSettings(JSON.parse(settings));
+    
     setApiKey(apiKeyService.getApiKey() || '');
     setPaymentSettings(paymentService.getPaymentSettings());
     
-    // Load betting history
     const roundHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
     const userMapForHistory = new Map(allUsers.map(u => [u.id, u]));
     const allBets: EnrichedBet[] = [];
@@ -89,6 +90,14 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     });
     setHistoricalBets(allBets.sort((a, b) => b.timestamp - a.timestamp));
 
+    // Load live bets as well
+    const roundStateRaw = localStorage.getItem(ROUND_STATE_KEY);
+    if (roundStateRaw) {
+        const roundState = JSON.parse(roundStateRaw);
+        setLiveBets(roundState.bets || []);
+    } else {
+        setLiveBets([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -96,15 +105,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     window.addEventListener('storage', loadData);
     window.addEventListener('auth-change', loadData);
     
-    const liveBetInterval = setInterval(() => {
-        const roundStateRaw = localStorage.getItem(ROUND_STATE_KEY);
-        if (roundStateRaw) {
-            const roundState = JSON.parse(roundStateRaw);
-            setLiveBets(roundState.bets || []);
-        } else {
-            setLiveBets([]);
-        }
-    }, 1000);
+    const liveBetInterval = setInterval(loadData, 2000); // Poll every 2s as a fallback
 
     return () => {
         window.removeEventListener('storage', loadData);

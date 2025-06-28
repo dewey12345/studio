@@ -21,10 +21,18 @@ export function AddFundsDialog({ isOpen, onOpenChange }: AddFundsDialogProps) {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (isOpen) {
+    const updateSettings = () => {
       setSettings(paymentService.getPaymentSettings());
     }
-  }, [isOpen]);
+    updateSettings(); // Initial load when component mounts or `isOpen` changes
+    
+    // Listen for changes from other tabs
+    window.addEventListener('storage', updateSettings);
+    
+    return () => {
+      window.removeEventListener('storage', updateSettings);
+    };
+  }, []);
 
   if (!settings) return null;
 
