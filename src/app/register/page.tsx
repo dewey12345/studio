@@ -40,9 +40,9 @@ export default function RegisterPage() {
     },
   });
 
-  const onSubmit = (data: RegisterFormValues) => {
+  const onSubmit = async (data: RegisterFormValues) => {
     try {
-      authService.register(data.email, data.password, data.phone || undefined);
+      await authService.register(data.email, data.password, data.phone || undefined);
       toast({ title: 'Success', description: 'Account created successfully. Please log in.' });
       router.push('/');
     } catch (error: any) {

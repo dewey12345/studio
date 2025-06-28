@@ -33,9 +33,9 @@ export default function LoginPage() {
     },
   });
 
-  const onSubmit = (data: LoginFormValues) => {
+  const onSubmit = async (data: LoginFormValues) => {
     try {
-      const user = authService.login(data.credential, data.password);
+      const user = await authService.login(data.credential, data.password);
       toast({ title: 'Success', description: 'Logged in successfully.' });
       if (user.role === 'admin') {
         router.push('/admin');

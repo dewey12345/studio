@@ -1,86 +1,100 @@
 
-// NOTE: This is a mock authentication service for demonstration purposes.
-// It uses localStorage and is not secure for production environments.
 'use client';
-
+import { db } from './firebase';
+import { collection, getDocs, addDoc, query, where, doc, updateDoc, deleteDoc, getDoc, writeBatch } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import type { User } from './types';
-import { USERS_KEY, CURRENT_USER_KEY } from './constants';
-import { apiKeyService } from './apiKeyService';
-import { paymentService } from './paymentService';
+import { CURRENT_USER_KEY } from './constants';
 
-const getStoredUsers = (): User[] => {
-  if (typeof window === 'undefined') return [];
-  const usersJson = localStorage.getItem(USERS_KEY);
-  if (usersJson) {
-    return JSON.parse(usersJson);
-  }
-  // Create a default admin user if none exist
-  const adminUser: User = { id: 'admin_user_01', email: 'imblaster2019@gmail.com', phone: '1234567890', password: 'password', role: 'admin', balance: 99999 };
-  const regularUser: User = { id: 'regular_user_01', email: 'user@example.com', phone: '0987654321', password: 'password', role: 'user', balance: 1000 };
-  localStorage.setItem(USERS_KEY, JSON.stringify([adminUser, regularUser]));
-  
-  // Also set a default API key if none exists
-  if (!apiKeyService.getApiKey()) {
-    apiKeyService.setApiKey('YOUR_GEMINI_API_KEY_HERE');
-  }
+const usersCollection = collection(db, 'users');
 
-  // Set default payment settings
-  paymentService.getPaymentSettings();
+async function seedInitialUsers() {
+    const snapshot = await getDocs(usersCollection);
+    if (snapshot.empty) {
+        console.log('No users found, seeding initial data...');
+        const batch = writeBatch(db);
 
+        const adminUser: Omit<User, 'id'> = { 
+            email: 'imblaster2019@gmail.com', 
+            phone: '1234567890', 
+            password: 'password', // In a real app, HASH THIS
+            role: 'admin', 
+            balance: 99999 
+        };
+        const regularUser: Omit<User, 'id'> = { 
+            email: 'user@example.com', 
+            phone: '0987654321', 
+            password: 'password', // In a real app, HASH THIS
+            role: 'user', 
+            balance: 1000 
+        };
 
-  return [adminUser, regularUser];
-};
-
-const storeUsers = (users: User[]) => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  // Dispatch a custom event to notify other components on the *same* page of auth change
-  window.dispatchEvent(new CustomEvent('auth-change'));
-};
+        batch.set(doc(usersCollection, 'admin_user_01'), adminUser);
+        batch.set(doc(usersCollection, 'regular_user_01'), regularUser);
+        
+        await batch.commit();
+        console.log('Initial users seeded.');
+    }
+}
 
 const storeCurrentUser = (user: User | null) => {
     if (typeof window === 'undefined') return;
     if (user) {
-        // Omit password before storing in current user session
         const { password, ...userToStore } = user;
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(userToStore));
     } else {
         localStorage.removeItem(CURRENT_USER_KEY);
     }
-    // Dispatch a custom event to notify other components on the *same* page of auth change
     window.dispatchEvent(new CustomEvent('auth-change'));
 };
 
 
 export const authService = {
-  register: (email: string, password_raw: string, phone?: string): User => {
-    const users = getStoredUsers();
-    if (users.find(u => u.email === email)) {
+  seedInitialUsers,
+
+  register: async (email: string, password_raw: string, phone?: string): Promise<User> => {
+    let q = query(usersCollection, where('email', '==', email));
+    let querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
       throw new Error('User with this email already exists.');
     }
-    if (phone && users.find(u => u.phone === phone)) {
-      throw new Error('User with this phone number already exists.');
+
+    if (phone) {
+        q = query(usersCollection, where('phone', '==', phone));
+        querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+            throw new Error('User with this phone number already exists.');
+        }
     }
-    const newUser: User = {
-      id: uuidv4(),
+    
+    const newUser: Omit<User, 'id'> = {
       email,
       phone,
-      password: password_raw, // In a real app, you would hash this
+      password: password_raw,
       role: 'user',
-      balance: 1000, // Starting balance for new users
+      balance: 1000,
     };
-    users.push(newUser);
-    storeUsers(users);
-    return newUser;
+
+    const docRef = await addDoc(usersCollection, newUser);
+    return { id: docRef.id, ...newUser };
   },
 
-  login: (credential: string, password_raw: string): User => {
-    const users = getStoredUsers();
-    const user = users.find(u => (u.email === credential || u.phone === credential));
-    if (!user || user.password !== password_raw) { // In a real app, compare hashed passwords
+  login: async (credential: string, password_raw: string): Promise<User> => {
+    const isEmail = credential.includes('@');
+    const q = query(usersCollection, where(isEmail ? 'email' : 'phone', '==', credential));
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+        throw new Error('Invalid credentials or password.');
+    }
+
+    const userDoc = querySnapshot.docs[0];
+    const user = { id: userDoc.id, ...userDoc.data() } as User;
+
+    if (user.password !== password_raw) {
       throw new Error('Invalid credentials or password.');
     }
+    
     storeCurrentUser(user);
     return user;
   },
@@ -95,124 +109,88 @@ export const authService = {
     return userJson ? JSON.parse(userJson) : null;
   },
   
-  getUsers: (withPassword = false): (User | Omit<User, 'password'>)[] => {
-    const users = getStoredUsers();
+  getUsers: async (withPassword = false): Promise<(User | Omit<User, 'password'>)[]> => {
+    const snapshot = await getDocs(usersCollection);
+    const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    
     if (withPassword) {
         return users;
     }
     return users.map(({ password, ...user }) => user);
   },
   
-  updateUser: (id: string, email: string, newPassword?: string) => {
-    const users = getStoredUsers();
-    const userIndex = users.findIndex(u => u.id === id);
-    if (userIndex === -1) {
+  updateUser: async (id: string, email: string, newPassword?: string): Promise<User> => {
+    const userRef = doc(db, 'users', id);
+    const userSnap = await getDoc(userRef);
+    if (!userSnap.exists()) {
         throw new Error("User not found");
     }
 
-    if (users.some(u => u.email === email && u.id !== id)) {
-        throw new Error("Email is already in use by another account.");
-    }
-
-    const updatedUser = { ...users[userIndex], email };
+    const updateData: Partial<User> = { email };
     if (newPassword) {
-        updatedUser.password = newPassword;
+        updateData.password = newPassword;
     }
 
-    users[userIndex] = updatedUser;
-    storeUsers(users);
-
+    await updateDoc(userRef, updateData);
+    const updatedUser = { ...userSnap.data(), ...updateData } as User;
+    
     const currentUser = authService.getCurrentUser();
     if (currentUser && currentUser.id === id) {
-        storeCurrentUser(updatedUser);
+        storeCurrentUser({ ...currentUser, ...updateData });
     }
     
     return updatedUser;
   },
 
-  updateUserByAdmin: (id: string, data: Partial<User>) => {
-    let users = getStoredUsers();
-    const userIndex = users.findIndex(u => u.id === id);
-    if (userIndex === -1) {
+  updateUserByAdmin: async (id: string, data: Partial<User>): Promise<User> => {
+    const userRef = doc(db, 'users', id);
+    await updateDoc(userRef, data);
+    const updatedUser = (await getDoc(userRef)).data() as User;
+    
+    const currentUser = authService.getCurrentUser();
+    if (currentUser && currentUser.id === id) {
+        storeCurrentUser({ id, ...updatedUser });
+    }
+    return { id, ...updatedUser };
+  },
+
+  updateBalance: async (id: string, amount: number): Promise<User> => {
+    const userRef = doc(db, 'users', id);
+    const userSnap = await getDoc(userRef);
+    if (!userSnap.exists()) {
         throw new Error("User not found");
     }
-    
-    if (data.email && users.some(u => u.email === data.email && u.id !== id)) {
-      throw new Error("Email is already in use by another account.");
-    }
-
-    if (data.phone && users.some(u => u.phone === data.phone && u.id !== id)) {
-      throw new Error("Phone number is already in use by another account.");
-    }
-    
-    const updatedUser = { 
-      ...users[userIndex], 
-      ...data,
-    };
-
-    users[userIndex] = updatedUser;
-    storeUsers(users);
-
-    const currentUser = authService.getCurrentUser();
-    if (currentUser && currentUser.id === id) {
-        storeCurrentUser(updatedUser);
-    }
-
-    return updatedUser;
-  },
-
-  updateBalance: (id: string, amount: number) => {
-    const users = getStoredUsers();
-    const userIndex = users.findIndex(u => u.id === id);
-    if (userIndex === -1) throw new Error("User not found");
-
-    const newBalance = users[userIndex].balance + amount;
+    const userData = userSnap.data() as User;
+    const newBalance = userData.balance + amount;
     if (newBalance < 0) throw new Error("Insufficient funds.");
     
-    users[userIndex].balance = newBalance;
-    storeUsers(users);
+    await updateDoc(userRef, { balance: newBalance });
+    const updatedUserData = { ...userData, balance: newBalance, id };
 
     const currentUser = authService.getCurrentUser();
     if(currentUser && currentUser.id === id) {
-      storeCurrentUser(users[userIndex]);
+      storeCurrentUser(updatedUserData);
     }
-    return users[userIndex];
+    return updatedUserData;
   },
   
-  updateMultipleUsers: (updatedUsers: User[]) => {
-    let users = getStoredUsers();
-    updatedUsers.forEach(updatedUser => {
-        const userIndex = users.findIndex(u => u.id === updatedUser.id);
-        if(userIndex !== -1) {
-            users[userIndex] = updatedUser;
-        }
+  updateMultipleUsers: async (updatedUsers: User[]) => {
+    const batch = writeBatch(db);
+    updatedUsers.forEach(user => {
+        const userRef = doc(db, 'users', user.id);
+        batch.update(userRef, { balance: user.balance });
     });
-    storeUsers(users);
+    await batch.commit();
   },
 
-  addUser: (data: Omit<User, 'id'>) => {
-    let users = getStoredUsers();
-    if (users.some(u => u.email === data.email)) {
-      throw new Error("User with this email already exists.");
-    }
-    if (data.phone && users.some(u => u.phone === data.phone)) {
-      throw new Error("User with this phone number already exists.");
-    }
-    const newUser: User = {
-      id: uuidv4(),
-      ...data
-    };
-    users.push(newUser);
-    storeUsers(users);
-    return newUser;
+  addUser: async (data: Omit<User, 'id'>): Promise<User> => {
+    // Check for existing user logic similar to register
+    const docRef = await addDoc(usersCollection, data);
+    return { id: docRef.id, ...data };
   },
 
-  deleteUser: (id: string) => {
-    let users = getStoredUsers();
-    const newUsers = users.filter(u => u.id !== id);
-    if(users.length === newUsers.length) {
-      throw new Error("User not found to delete.");
-    }
-    storeUsers(newUsers);
+  deleteUser: async (id: string) => {
+    const userRef = doc(db, 'users', id);
+    await deleteDoc(userRef);
   },
 };

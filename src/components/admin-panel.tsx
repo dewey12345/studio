@@ -2,19 +2,16 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { authService } from '@/lib/auth';
 import { supportService } from '@/lib/supportService';
 import { withdrawalService } from '@/lib/withdrawService';
 import { apiKeyService } from '@/lib/apiKeyService';
 import { paymentService } from '@/lib/paymentService';
+import { gameService } from '@/lib/gameService';
 
 import type { User, SupportTicket, WithdrawalRequest, GameSettings, Bet, RoundResult, PaymentSettings, Color, BigSmall } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
@@ -23,12 +20,12 @@ import { UserEditDialog } from './user-edit-dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { GAME_SETTINGS_KEY, ROUND_STATE_KEY, GLOBAL_ROUND_HISTORY_KEY } from '@/lib/constants';
+import { ROUND_STATE_KEY } from '@/lib/constants';
 import Leaderboard from './leaderboard';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from './ui/scroll-area';
-import { getNumberDetails } from '@/lib/game-logic';
 import Image from 'next/image';
+import { Skeleton } from './ui/skeleton';
 
 interface AdminPanelProps {
   adminUser: User;
@@ -56,61 +53,75 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
   const [liveBets, setLiveBets] = useState<SyncedBet[]>([]);
   const [historicalBets, setHistoricalBets] = useState<EnrichedBet[]>([]);
   const [historySearchTerm, setHistorySearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
 
   const { toast } = useToast();
   
   const userMap = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
 
-  const loadData = useCallback(() => {
-    const allUsers = authService.getUsers(true) as User[];
-    setUsers(allUsers);
-    setSupportTickets(supportService.getAllTickets());
-    setWithdrawalRequests(withdrawalService.getAllRequests());
-    
-    const settings = localStorage.getItem(GAME_SETTINGS_KEY);
-    if(settings) setGameSettings(JSON.parse(settings));
-    
-    setApiKey(apiKeyService.getApiKey() || '');
-    setPaymentSettings(paymentService.getPaymentSettings());
-    
-    const roundHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
-    const userMapForHistory = new Map(allUsers.map(u => [u.id, u]));
-    const allBets: EnrichedBet[] = [];
-    roundHistory.forEach(round => {
-        (round.bets || []).forEach(bet => {
-            const user = userMapForHistory.get(bet.userId);
-            allBets.push({
-                ...bet,
-                userEmail: user?.email || 'Unknown',
-                userPhone: user?.phone,
-                roundId: round.id,
-                winningNumber: round.winningNumber
-            });
-        });
-    });
-    setHistoricalBets(allBets.sort((a, b) => b.timestamp - a.timestamp));
+  const loadData = useCallback(async () => {
+    try {
+      const [allUsers, tickets, requests, settings, key, paymentConf, roundHistory] = await Promise.all([
+        authService.getUsers(true) as Promise<User[]>,
+        supportService.getAllTickets(),
+        withdrawalService.getAllRequests(),
+        gameService.getGameSettings(),
+        apiKeyService.getApiKey(),
+        paymentService.getPaymentSettings(),
+        gameService.getGlobalRoundHistory(),
+      ]);
 
-    // Load live bets as well
-    const roundStateRaw = localStorage.getItem(ROUND_STATE_KEY);
-    if (roundStateRaw) {
-        const roundState = JSON.parse(roundStateRaw);
-        setLiveBets(roundState.bets || []);
-    } else {
-        setLiveBets([]);
+      setUsers(allUsers);
+      setSupportTickets(tickets);
+      setWithdrawalRequests(requests);
+      setGameSettings(settings);
+      setApiKey(key || '');
+      setPaymentSettings(paymentConf);
+      
+      const userMapForHistory = new Map(allUsers.map(u => [u.id, u]));
+      const allBets: EnrichedBet[] = [];
+      roundHistory.forEach(round => {
+          (round.bets || []).forEach(bet => {
+              const user = userMapForHistory.get(bet.userId);
+              allBets.push({
+                  ...bet,
+                  userEmail: user?.email || 'Unknown',
+                  userPhone: user?.phone,
+                  roundId: round.id,
+                  winningNumber: round.winningNumber
+              });
+          });
+      });
+      setHistoricalBets(allBets.sort((a, b) => b.timestamp - a.timestamp));
+
+      // Load live bets from localStorage as it's the most real-time
+      const roundStateRaw = localStorage.getItem(ROUND_STATE_KEY);
+      if (roundStateRaw) {
+          const roundState = JSON.parse(roundStateRaw);
+          setLiveBets(roundState.bets || []);
+      } else {
+          setLiveBets([]);
+      }
+    } catch (error) {
+      console.error("Failed to load admin panel data:", error);
+      toast({ title: "Error", description: "Could not load admin data. Please refresh.", variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     loadData();
-    window.addEventListener('storage', loadData);
-    window.addEventListener('auth-change', loadData);
     
-    const liveBetInterval = setInterval(loadData, 2000); // Poll every 2s as a fallback
-
+    const handleStorageChange = (e: StorageEvent) => {
+        if (e.key === ROUND_STATE_KEY) {
+            loadData(); // A simple way to reload all data on change
+        }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    
     return () => {
-        window.removeEventListener('storage', loadData);
-        window.removeEventListener('auth-change', loadData);
-        clearInterval(liveBetInterval);
+        window.removeEventListener('storage', handleStorageChange);
     };
   }, [loadData]);
 
@@ -129,27 +140,6 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     return filteredHistoricalBets.reduce((sum, bet) => sum + bet.amount, 0);
   }, [filteredHistoricalBets]);
 
-  const liveBetTotals = useMemo(() => {
-    const totals = {
-        color: { Red: 0, Green: 0, Violet: 0 },
-        number: Array(10).fill(0),
-        size: { Big: 0, Small: 0 },
-        total: 0,
-    };
-
-    liveBets.forEach(bet => {
-        totals.total += bet.amount;
-        if(bet.type === 'Color') {
-            totals.color[bet.value as Color] += bet.amount;
-        } else if (bet.type === 'Number') {
-            totals.number[bet.value as number] += bet.amount;
-        } else if (bet.type === 'BigSmall') {
-            totals.size[bet.value as BigSmall] += bet.amount;
-        }
-    });
-    return totals;
-  }, [liveBets]);
-
   const handleAddUser = () => {
     setEditingUser(null);
     setIsDialogOpen(true);
@@ -160,12 +150,12 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     setIsDialogOpen(true);
   };
   
-  const handleDeleteUser = (userId: string) => {
+  const handleDeleteUser = async (userId: string) => {
     try {
         if(userId === adminUser.id) {
             throw new Error("Cannot delete your own admin account.");
         }
-        authService.deleteUser(userId);
+        await authService.deleteUser(userId);
         toast({ title: "Success", description: "User has been deleted." });
         loadData();
     } catch (error: any) {
@@ -173,14 +163,14 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     }
   };
   
-  const handleSaveUser = (data: Partial<User>) => {
+  const handleSaveUser = async (data: Partial<User>) => {
     try {
       if (editingUser) {
-        authService.updateUserByAdmin(editingUser.id, data);
+        await authService.updateUserByAdmin(editingUser.id, data);
         toast({ title: "Success", description: "User updated successfully." });
       } else {
         if(!data.password) throw new Error("Password is required for new users.");
-        authService.addUser(data as Omit<User, 'id'>);
+        await authService.addUser(data as Omit<User, 'id'>);
         toast({ title: "Success", description: "User created successfully." });
       }
       loadData();
@@ -190,9 +180,9 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     }
   };
 
-  const handleTicketStatusChange = (ticketId: string, status: 'pending' | 'resolved') => {
+  const handleTicketStatusChange = async (ticketId: string, status: 'pending' | 'resolved') => {
     try {
-        supportService.updateTicketStatus(ticketId, status);
+        await supportService.updateTicketStatus(ticketId, status);
         toast({ title: "Success", description: "Ticket status updated." });
         loadData();
     } catch (error: any) {
@@ -200,9 +190,9 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     }
   };
 
-  const handleWithdrawalStatusChange = (reqId: string, status: 'pending' | 'sent') => {
+  const handleWithdrawalStatusChange = async (reqId: string, status: 'pending' | 'sent') => {
      try {
-        withdrawalService.updateRequestStatus(reqId, status);
+        await withdrawalService.updateRequestStatus(reqId, status);
         toast({ title: "Success", description: "Withdrawal status updated." });
         loadData();
     } catch (error: any) {
@@ -210,36 +200,39 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
     }
   }
 
-  const handleGameSettingsChange = (newSettings: Partial<GameSettings>) => {
+  const handleGameSettingsChange = async (newSettings: Partial<GameSettings>) => {
     const updatedSettings = { ...gameSettings, ...newSettings };
     setGameSettings(updatedSettings);
-    localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(updatedSettings));
+    await gameService.setGameSettings(updatedSettings);
     toast({ title: 'Success', description: 'Game settings updated.' });
   }
 
-  const handleSetPrediction = (key: 'manualWinner' | 'manualWinnerColor' | 'manualWinnerSize', value: any) => {
-    const currentSettings = JSON.parse(localStorage.getItem(GAME_SETTINGS_KEY) || '{}');
+  const handleSetPrediction = async (key: 'manualWinner' | 'manualWinnerColor' | 'manualWinnerSize', value: any) => {
+    let currentSettings = await gameService.getGameSettings();
     
-    // Clear other manual settings to avoid conflicts
     delete currentSettings.manualWinner;
     delete currentSettings.manualWinnerColor;
     delete currentSettings.manualWinnerSize;
 
     const newSettings = { ...currentSettings, [key]: value };
 
-    localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(newSettings));
+    await gameService.setGameSettings(newSettings);
     setGameSettings(newSettings);
     toast({ title: "Prediction Set", description: `Next winner override is set to ${value}. This will be cleared after one round.` });
   };
   
-  const handleSaveApiKey = () => {
-    apiKeyService.setApiKey(apiKey);
+  const handleSaveApiKey = async () => {
+    await apiKeyService.setApiKey(apiKey);
     toast({ title: "Success", description: "API Key has been saved." });
   }
 
-  const handleSavePaymentSettings = () => {
-      paymentService.setPaymentSettings(paymentSettings);
+  const handleSavePaymentSettings = async () => {
+      await paymentService.setPaymentSettings(paymentSettings);
       toast({ title: "Success", description: "Payment settings have been saved." });
+  }
+
+  if (loading) {
+      return <Skeleton className="h-96 w-full" />;
   }
   
   return (

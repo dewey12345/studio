@@ -15,7 +15,7 @@ import { useEffect } from 'react';
 interface UserEditDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  onSave: (data: Partial<User>) => void;
+  onSave: (data: Partial<User>) => Promise<void>;
   user: Omit<User, 'password'> | null;
 }
 

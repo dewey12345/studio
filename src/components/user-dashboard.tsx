@@ -8,7 +8,7 @@ import { GameLobby } from '@/components/color-clash-game';
 import type { User, WithdrawalRequest } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
-import { Gamepad2, KeyRound, Wallet, Banknote } from 'lucide-react';
+import { KeyRound, Wallet, Banknote } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -42,7 +42,11 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
   const [isFundsDialogOpen, setIsFundsDialogOpen] = useState(false);
 
   useEffect(() => {
-    setWithdrawalHistory(withdrawalService.getRequestsForUser(user.id));
+    const fetchHistory = async () => {
+        const history = await withdrawalService.getRequestsForUser(user.id);
+        setWithdrawalHistory(history);
+    }
+    fetchHistory();
   }, [user.id]);
 
   const accountForm = useForm<UpdateFormValues>({
@@ -60,9 +64,9 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
     }
   });
 
-  const handleAccountUpdate = (data: UpdateFormValues) => {
+  const handleAccountUpdate = async (data: UpdateFormValues) => {
     try {
-        const updatedUser = authService.updateUser(user.id, data.email, data.password || undefined);
+        const updatedUser = await authService.updateUser(user.id, data.email, data.password || undefined);
         onUserUpdate(updatedUser);
         accountForm.reset({ email: data.email, password: '' });
         toast({ title: "Success", description: "Your account has been updated." });
@@ -71,15 +75,16 @@ export default function UserDashboard({ user, onUserUpdate }: UserDashboardProps
     }
   };
   
-  const handleWithdraw = (data: WithdrawFormValues) => {
+  const handleWithdraw = async (data: WithdrawFormValues) => {
       if (data.amount > (user.balance ?? 0)) {
           toast({ title: "Error", description: "Withdrawal amount cannot exceed your balance.", variant: "destructive" });
           return;
       }
       try {
-          withdrawalService.createRequest({ amount: data.amount, userId: user.id, userEmail: user.email });
+          await withdrawalService.createRequest({ amount: data.amount, userId: user.id, userEmail: user.email });
           withdrawForm.reset();
-          setWithdrawalHistory(withdrawalService.getRequestsForUser(user.id));
+          const history = await withdrawalService.getRequestsForUser(user.id);
+          setWithdrawalHistory(history);
           toast({ title: "Success", description: "Your withdrawal request has been submitted." });
       } catch (error: any) {
           toast({ title: "Error", description: error.message, variant: "destructive" });

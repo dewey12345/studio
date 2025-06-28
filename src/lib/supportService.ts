@@ -2,51 +2,48 @@
 'use client';
 import { v4 as uuidv4 } from 'uuid';
 import type { SupportTicket } from './types';
-import { SUPPORT_TICKETS_KEY } from './constants';
+import { db } from './firebase';
+import { collection, addDoc, getDocs, query, where, updateDoc, doc, orderBy } from 'firebase/firestore';
 
-const getStoredTickets = (): SupportTicket[] => {
-    if(typeof window === 'undefined') return [];
-    const ticketsJson = localStorage.getItem(SUPPORT_TICKETS_KEY);
-    return ticketsJson ? JSON.parse(ticketsJson) : [];
-};
 
-const storeTickets = (tickets: SupportTicket[]) => {
-    if(typeof window === 'undefined') return;
-    localStorage.setItem(SUPPORT_TICKETS_KEY, JSON.stringify(tickets));
-    window.dispatchEvent(new CustomEvent('storage'));
-};
+const ticketsCollection = collection(db, 'support-tickets');
 
 export const supportService = {
-    createTicket: (data: Omit<SupportTicket, 'id' | 'timestamp' | 'status'>) => {
-        const tickets = getStoredTickets();
+    createTicket: async (data: Omit<SupportTicket, 'id' | 'timestamp' | 'status'>): Promise<SupportTicket> => {
         const newTicket: SupportTicket = {
             ...data,
-            id: uuidv4(),
+            id: uuidv4(), // Still useful for unique keys
             timestamp: new Date().toISOString(),
             status: 'pending',
         };
-        tickets.unshift(newTicket);
-        storeTickets(tickets);
+        await addDoc(ticketsCollection, newTicket);
         return newTicket;
     },
 
-    getAllTickets: (): SupportTicket[] => {
-        return getStoredTickets();
+    getAllTickets: async (): Promise<SupportTicket[]> => {
+        const q = query(ticketsCollection, orderBy('timestamp', 'desc'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => doc.data() as SupportTicket);
     },
 
-    getTicketsForUser: (userId: string): SupportTicket[] => {
-        const tickets = getStoredTickets();
-        return tickets.filter(ticket => ticket.userId === userId);
+    getTicketsForUser: async (userId: string): Promise<SupportTicket[]> => {
+        const q = query(
+            ticketsCollection, 
+            where('userId', '==', userId),
+            orderBy('timestamp', 'desc')
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => doc.data() as SupportTicket);
     },
 
-    updateTicketStatus: (ticketId: string, status: 'pending' | 'resolved') => {
-        const tickets = getStoredTickets();
-        const ticketIndex = tickets.findIndex(t => t.id === ticketId);
-        if (ticketIndex === -1) {
+    updateTicketStatus: async (ticketId: string, status: 'pending' | 'resolved'): Promise<SupportTicket> => {
+        const q = query(ticketsCollection, where('id', '==', ticketId));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
             throw new Error("Ticket not found.");
         }
-        tickets[ticketIndex].status = status;
-        storeTickets(tickets);
-        return tickets[ticketIndex];
+        const ticketDoc = snapshot.docs[0];
+        await updateDoc(ticketDoc.ref, { status });
+        return { ...ticketDoc.data(), status } as SupportTicket;
     }
 };

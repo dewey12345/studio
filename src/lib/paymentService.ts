@@ -1,7 +1,10 @@
 
 'use client';
-import { PAYMENT_SETTINGS_KEY } from './constants';
 import type { PaymentSettings } from './types';
+import { db } from './firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+
+const settingsDoc = doc(db, 'settings', 'payment');
 
 const defaultSettings: PaymentSettings = {
     qrCodeUrl: 'https://placehold.co/300x300.png',
@@ -9,15 +12,17 @@ const defaultSettings: PaymentSettings = {
 };
 
 export const paymentService = {
-  setPaymentSettings: (settings: PaymentSettings): void => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(PAYMENT_SETTINGS_KEY, JSON.stringify(settings));
-    window.dispatchEvent(new CustomEvent('storage'));
+  setPaymentSettings: async (settings: PaymentSettings): Promise<void> => {
+    await setDoc(settingsDoc, settings);
   },
 
-  getPaymentSettings: (): PaymentSettings => {
-    if (typeof window === 'undefined') return defaultSettings;
-    const settingsJson = localStorage.getItem(PAYMENT_SETTINGS_KEY);
-    return settingsJson ? JSON.parse(settingsJson) : defaultSettings;
+  getPaymentSettings: async (): Promise<PaymentSettings> => {
+    const docSnap = await getDoc(settingsDoc);
+    if (docSnap.exists()) {
+        return docSnap.data() as PaymentSettings;
+    }
+    // Set default settings if they don't exist
+    await setDoc(settingsDoc, defaultSettings);
+    return defaultSettings;
   },
 };

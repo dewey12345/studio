@@ -2,64 +2,59 @@
 'use client';
 import { v4 as uuidv4 } from 'uuid';
 import type { WithdrawalRequest } from './types';
-import { WITHDRAWAL_REQUESTS_KEY } from './constants';
+import { db } from './firebase';
+import { collection, addDoc, getDocs, query, where, updateDoc, doc, orderBy } from 'firebase/firestore';
 import { authService } from './auth';
 
-const getStoredRequests = (): WithdrawalRequest[] => {
-    if (typeof window === 'undefined') return [];
-    const requestsJson = localStorage.getItem(WITHDRAWAL_REQUESTS_KEY);
-    return requestsJson ? JSON.parse(requestsJson) : [];
-};
-
-const storeRequests = (requests: WithdrawalRequest[]) => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(WITHDRAWAL_REQUESTS_KEY, JSON.stringify(requests));
-    window.dispatchEvent(new CustomEvent('storage'));
-};
+const requestsCollection = collection(db, 'withdrawal-requests');
 
 export const withdrawalService = {
-    createRequest: (data: Omit<WithdrawalRequest, 'id' | 'timestamp' | 'status'>) => {
-        const requests = getStoredRequests();
+    createRequest: async (data: Omit<WithdrawalRequest, 'id' | 'timestamp' | 'status'>): Promise<WithdrawalRequest> => {
         const newRequest: WithdrawalRequest = {
             ...data,
             id: uuidv4(),
             timestamp: new Date().toISOString(),
             status: 'pending',
         };
-        requests.unshift(newRequest);
-        storeRequests(requests);
+        await addDoc(requestsCollection, newRequest);
         return newRequest;
     },
 
-    getAllRequests: (): WithdrawalRequest[] => {
-        return getStoredRequests();
+    getAllRequests: async (): Promise<WithdrawalRequest[]> => {
+        const q = query(requestsCollection, orderBy('timestamp', 'desc'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(d => d.data() as WithdrawalRequest);
     },
 
-    getRequestsForUser: (userId: string): WithdrawalRequest[] => {
-        const requests = getStoredRequests();
-        return requests.filter(req => req.userId === userId);
+    getRequestsForUser: async (userId: string): Promise<WithdrawalRequest[]> => {
+        const q = query(
+            requestsCollection, 
+            where('userId', '==', userId),
+            orderBy('timestamp', 'desc')
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(d => d.data() as WithdrawalRequest);
     },
 
-    updateRequestStatus: (reqId: string, status: 'pending' | 'sent') => {
-        const requests = getStoredRequests();
-        const reqIndex = requests.findIndex(r => r.id === reqId);
-        if (reqIndex === -1) {
+    updateRequestStatus: async (reqId: string, status: 'pending' | 'sent'): Promise<WithdrawalRequest> => {
+        const q = query(requestsCollection, where('id', '==', reqId));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
             throw new Error("Request not found.");
         }
         
-        const request = requests[reqIndex];
-        // Only deduct balance when moving to 'sent' for the first time
+        const reqDoc = snapshot.docs[0];
+        const request = reqDoc.data() as WithdrawalRequest;
+
         if (request.status === 'pending' && status === 'sent') {
             try {
-                authService.updateBalance(request.userId, -request.amount);
+                await authService.updateBalance(request.userId, -request.amount);
             } catch (error: any) {
-                // If balance deduction fails, don't update the status
                 throw new Error(`Failed to deduct balance: ${error.message}`);
             }
         }
 
-        request.status = status;
-        storeRequests(requests);
-        return request;
+        await updateDoc(reqDoc.ref, { status });
+        return { ...request, status };
     }
 };

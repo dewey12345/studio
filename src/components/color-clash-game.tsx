@@ -13,8 +13,9 @@ import { History, Palette, Wallet, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { authService } from '@/lib/auth';
 import { apiKeyService } from '@/lib/apiKeyService';
+import { gameService } from '@/lib/gameService';
 import { getNumberDetails, getPayout, NUMBER_CONFIG } from '@/lib/game-logic';
-import { GAME_SETTINGS_KEY, GLOBAL_ROUND_HISTORY_KEY, ROUND_STATE_KEY } from '@/lib/constants';
+import { ROUND_STATE_KEY } from '@/lib/constants';
 import Leaderboard from './leaderboard';
 import { Input } from './ui/input';
 import { Logo } from './logo';
@@ -64,8 +65,8 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   const hasBetOnNumber = useMemo(() => currentUserBets.some(b => b.type === 'Number'), [currentUserBets]);
   const hasBetOnBigSmall = useMemo(() => currentUserBets.some(b => b.type === 'BigSmall'), [currentUserBets]);
 
-  useEffect(() => {
-    const globalHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
+  const loadHistory = useCallback(async () => {
+    const globalHistory = await gameService.getGlobalRoundHistory(50);
     const userHistory = globalHistory.map(round => {
         const userBets = (round.bets || []).filter(b => b.userId === user.id);
         const userTotalPayout = userBets.reduce((sum, bet) => sum + (bet.payout || 0), 0);
@@ -75,8 +76,12 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
             totalPayout: userTotalPayout,
         };
     }).filter(round => round.bets.length > 0); 
-    setBetHistory(userHistory.slice(0, 50));
-  }, [user.id, roundState]); // Depend on roundState to re-calc history when new round is processed
+    setBetHistory(userHistory);
+  }, [user.id]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [user.id, roundState, loadHistory]);
   
   useEffect(() => {
     const handleResize = () => {
@@ -92,19 +97,16 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const startNewRound = useCallback(() => {
+  const startNewRound = useCallback(async () => {
     if (typeof window === 'undefined') return;
     
     // Clear one-time manual winner setting
-    const settingsRaw = localStorage.getItem(GAME_SETTINGS_KEY);
-    if(settingsRaw) {
-      const settings = JSON.parse(settingsRaw);
-      if(settings.manualWinner !== undefined || settings.manualWinnerColor !== undefined || settings.manualWinnerSize !== undefined) {
+    const settings = await gameService.getGameSettings();
+    if(settings.manualWinner !== undefined || settings.manualWinnerColor !== undefined || settings.manualWinnerSize !== undefined) {
         delete settings.manualWinner;
         delete settings.manualWinnerColor;
         delete settings.manualWinnerSize;
-        localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(settings));
-      }
+        await gameService.setGameSettings(settings);
     }
 
     const newRoundState: RoundState = {
@@ -132,7 +134,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     
     setIsProcessingEnd(true);
 
-    const gameSettings: GameSettings = JSON.parse(localStorage.getItem(GAME_SETTINGS_KEY) || '{"difficulty": "easy"}');
+    const gameSettings = await gameService.getGameSettings();
     
     let winningNumber: number;
 
@@ -149,7 +151,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
             .map(([numStr]) => parseInt(numStr));
         winningNumber = possibleNumbers[Math.floor(Math.random() * possibleNumbers.length)];
     } else {
-      const apiKey = apiKeyService.getApiKey();
+      const apiKey = await apiKeyService.getApiKey();
       if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
         if (user.role === 'admin') {
           toast({
@@ -178,7 +180,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
       }
     }
     
-    const allUsers = authService.getUsers(true);
+    const allUsers = await authService.getUsers(true) as User[];
     let totalPayouts = new Map<string, number>();
 
     currentState.bets.forEach(bet => {
@@ -204,7 +206,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     });
 
     if(updatedUsers.length > 0) {
-        authService.updateMultipleUsers(updatedUsers);
+        await authService.updateMultipleUsers(updatedUsers);
     }
     
     const roundBetsWithPayouts = currentState.bets.map(bet => ({
@@ -218,9 +220,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
         totalPayout: Array.from(totalPayouts.values()).reduce((sum, payout) => sum + payout, 0)
     };
 
-    const globalHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
-    globalHistory.unshift(globalRoundResult);
-    localStorage.setItem(GLOBAL_ROUND_HISTORY_KEY, JSON.stringify(globalHistory.slice(0, 50)));
+    await gameService.addRoundToHistory(globalRoundResult);
 
     const userBets = currentState.bets.filter(b => b.userId === user.id);
     
@@ -287,7 +287,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   }, [roundState, handleRoundEnd, startNewRound]);
 
 
-  const handleBet = (type: BetType, value: string | number) => {
+  const handleBet = async (type: BetType, value: string | number) => {
     if (betAmount <= 0) {
       toast({ title: "Invalid Amount", description: "Bet amount must be greater than zero.", variant: "destructive" });
       return;
@@ -323,7 +323,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     setRoundState(newState);
 
     try {
-        const updatedUser = authService.updateBalance(user.id, -finalBetAmount);
+        const updatedUser = await authService.updateBalance(user.id, -finalBetAmount);
         onUserUpdate(updatedUser);
         toast({ title: "Bet Placed!", description: `You bet ₹${finalBetAmount.toFixed(2)} on ${value}.`})
     } catch (error) {
@@ -353,12 +353,21 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   const lastResult = betHistory[0];
   
   const netResult = useMemo(() => {
-      if (!lastResult || !lastResult.bets) return 0;
-      const totalBetAmount = lastResult.bets.reduce((s, b) => s + b.amount, 0);
-      return lastResult.totalPayout - totalBetAmount;
+      if (!lastResult || !lastResult.bets) return { profit: 0, loss: 0 };
+      return (lastResult.bets || []).reduce(
+        (acc, bet) => {
+            const isWin = (bet.payout || 0) > 0;
+            if (isWin) {
+                acc.profit += (bet.payout! - bet.amount);
+            } else {
+                acc.loss += bet.amount;
+            }
+            return acc;
+        }, { profit: 0, loss: 0 }
+      );
   }, [lastResult]);
 
-  const isOverallWin = lastResult && netResult > 0;
+  const isOverallWin = lastResult && (netResult.profit > netResult.loss);
 
   const hasBetOnColorType = (color: string) => currentUserBets.some(b => b.type === 'Color' && b.value === color);
   const hasBetOnNumberType = (num: number) => currentUserBets.some(b => b.type === 'Number' && b.value === num);
@@ -497,14 +506,14 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                                     </div>
                                 </div>
                             </TableCell>
-                            <TableCell className="text-xs">
+                            <TableCell>
                                 {result.bets.length > 0 ? (
                                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                                         {result.bets.map((bet, index) => {
                                             const isWin = (bet.payout || 0) > 0;
                                             return (
                                                 <span key={index} className={cn(
-                                                    'font-semibold px-1.5 py-0.5 rounded',
+                                                    'font-semibold px-1.5 py-0.5 rounded text-xs',
                                                     isWin ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
                                                 )}>
                                                     {bet.value} (₹{bet.amount.toFixed(0)})
@@ -513,10 +522,10 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                                         })}
                                     </div>
                                 ) : (
-                                    <span>No Bet</span>
+                                    <span className="text-xs text-muted-foreground">No Bet</span>
                                 )}
                             </TableCell>
-                            <TableCell className="text-right font-mono font-semibold">
+                            <TableCell className="text-right font-mono font-semibold text-xs">
                                 <span className="text-green-400 whitespace-nowrap">+₹{totalProfit.toFixed(2)}</span>
                                 <span className="text-muted-foreground"> / </span>
                                 <span className="text-red-400 whitespace-nowrap">-₹{totalLosses.toFixed(2)}</span>
@@ -572,9 +581,8 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
             <div className="mt-4 pt-4 border-t border-border">
                 <p className="text-right font-bold text-xl">
                     Round Profit/Loss: 
-                    <span className={netResult >= 0 ? 'text-green-400' : 'text-red-400'}>
-                      {netResult >= 0 ? ` +₹${netResult.toFixed(2)}` : ` -₹${Math.abs(netResult).toFixed(2)}`}
-                    </span>
+                     <span className="text-green-400"> +₹{netResult.profit.toFixed(2)}</span> / 
+                     <span className="text-red-400"> -₹{netResult.loss.toFixed(2)}</span>
                 </p>
             </div>
           )}

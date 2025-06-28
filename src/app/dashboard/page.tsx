@@ -19,10 +19,7 @@ export default function DashboardPage() {
     if (!currentUser) {
       router.push('/');
     } else {
-      // The full user object with password isn't stored, so we refetch from the "DB"
-      const users = authService.getUsers(true);
-      const fullCurrentUser = users.find(u => u.id === currentUser.id);
-      setUser(fullCurrentUser || currentUser); // Fallback to stored user
+      setUser(currentUser);
       setLoading(false);
     }
     

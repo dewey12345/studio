@@ -14,13 +14,20 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const currentUser = authService.getCurrentUser();
-    if (!currentUser || currentUser.role !== 'admin') {
-      router.push('/');
-    } else {
-      setUser(currentUser);
-      setLoading(false);
-    }
+    const checkUser = async () => {
+      // Seed initial data if it doesn't exist
+      await authService.seedInitialUsers();
+
+      const currentUser = authService.getCurrentUser();
+      if (!currentUser || currentUser.role !== 'admin') {
+        router.push('/');
+      } else {
+        setUser(currentUser);
+        setLoading(false);
+      }
+    };
+    
+    checkUser();
 
     const handleAuthChange = () => {
         const updatedUser = authService.getCurrentUser();
