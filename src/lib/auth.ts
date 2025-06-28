@@ -35,8 +35,8 @@ const getStoredUsers = (): User[] => {
 const storeUsers = (users: User[]) => {
   if (typeof window === 'undefined') return;
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  // Dispatch a custom event to notify other components of auth change
-  window.dispatchEvent(new CustomEvent('storage'));
+  // Dispatch a custom event to notify other components on the *same* page of auth change
+  window.dispatchEvent(new CustomEvent('auth-change'));
 };
 
 const storeCurrentUser = (user: User | null) => {
@@ -48,6 +48,7 @@ const storeCurrentUser = (user: User | null) => {
     } else {
         localStorage.removeItem(CURRENT_USER_KEY);
     }
+    // Dispatch a custom event to notify other components on the *same* page of auth change
     window.dispatchEvent(new CustomEvent('auth-change'));
 };
 

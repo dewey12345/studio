@@ -67,7 +67,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   useEffect(() => {
     const globalHistory: RoundResult[] = JSON.parse(localStorage.getItem(GLOBAL_ROUND_HISTORY_KEY) || '[]');
     const userHistory = globalHistory.map(round => {
-        const userBets = round.bets.filter(b => b.userId === user.id);
+        const userBets = (round.bets || []).filter(b => b.userId === user.id);
         const userTotalPayout = userBets.reduce((sum, bet) => sum + (bet.payout || 0), 0);
         return {
             ...round,
@@ -76,7 +76,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
         };
     }).filter(round => round.bets.length > 0); 
     setBetHistory(userHistory.slice(0, 50));
-  }, [user.id]);
+  }, [user.id, roundState]); // Depend on roundState to re-calc history when new round is processed
   
   useEffect(() => {
     const handleResize = () => {
@@ -225,20 +225,6 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
     const userBets = currentState.bets.filter(b => b.userId === user.id);
     
     if (userBets.length > 0) {
-      const userTotalPayout = totalPayouts.get(user.id) || 0;
-      const userBetsWithPayouts = userBets.map(bet => ({
-          ...bet,
-          payout: getPayout(bet, winningNumber)
-      }));
-
-      const userRoundResult: RoundResult = {
-          id: currentState.id,
-          winningNumber: winningNumber,
-          bets: userBetsWithPayouts,
-          totalPayout: userTotalPayout
-      };
-
-      setBetHistory(prev => [userRoundResult, ...prev].slice(0, 50));
       setShowResultDialog(true);
     }
     
@@ -365,7 +351,13 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
   }
   
   const lastResult = betHistory[0];
-  const netResult = lastResult ? lastResult.totalPayout - lastResult.bets.reduce((s, b) => s + b.amount, 0) : 0;
+  
+  const netResult = useMemo(() => {
+      if (!lastResult || !lastResult.bets) return 0;
+      const totalBetAmount = lastResult.bets.reduce((s, b) => s + b.amount, 0);
+      return lastResult.totalPayout - totalBetAmount;
+  }, [lastResult]);
+
   const isOverallWin = lastResult && netResult > 0;
 
   const hasBetOnColorType = (color: string) => currentUserBets.some(b => b.type === 'Color' && b.value === color);
@@ -481,8 +473,8 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                     <TableBody>
                     {betHistory.length > 0 ? betHistory.map((result) => {
                         const details = getNumberDetails(result.winningNumber);
-                        const totalBetAmount = result.bets.reduce((sum, bet) => sum + bet.amount, 0);
-                        const netResult = result.totalPayout - totalBetAmount;
+                        const totalBetAmount = (result.bets || []).reduce((sum, bet) => sum + bet.amount, 0);
+                        const currentNetResult = result.totalPayout - totalBetAmount;
 
                         return (
                         <TableRow key={result.id}>
@@ -515,8 +507,8 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                                     <span>No Bet</span>
                                 )}
                             </TableCell>
-                            <TableCell className={`text-right font-mono font-semibold ${netResult >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                {netResult >= 0 ? `+₹${netResult.toFixed(2)}` : `-₹${Math.abs(netResult).toFixed(2)}`}
+                            <TableCell className={`text-right font-mono font-semibold ${currentNetResult >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {currentNetResult >= 0 ? `+₹${currentNetResult.toFixed(2)}` : `-₹${Math.abs(currentNetResult).toFixed(2)}`}
                             </TableCell>
                         </TableRow>
                         )
@@ -557,7 +549,7 @@ export function GameLobby({ user, onUserUpdate }: GameLobbyProps) {
                                 "font-bold text-base",
                                 isWin ? 'text-green-400' : 'text-red-400'
                             )}>
-                                {isWin ? `+ ₹${profit.toFixed(2)}` : `- ₹${bet.amount.toFixed(2)}`}
+                                {isWin ? `+₹${profit.toFixed(2)}` : `-₹${bet.amount.toFixed(2)}`}
                             </span>
                         </div>
                     );

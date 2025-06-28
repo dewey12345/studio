@@ -94,6 +94,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
   useEffect(() => {
     loadData();
     window.addEventListener('storage', loadData);
+    window.addEventListener('auth-change', loadData);
     
     const liveBetInterval = setInterval(() => {
         const roundStateRaw = localStorage.getItem(ROUND_STATE_KEY);
@@ -107,6 +108,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
 
     return () => {
         window.removeEventListener('storage', loadData);
+        window.removeEventListener('auth-change', loadData);
         clearInterval(liveBetInterval);
     };
   }, [loadData]);
@@ -244,8 +246,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
       <h1 className="text-3xl font-bold flex items-center gap-2"><Shield /> Admin Dashboard</h1>
 
       <Tabs defaultValue="live" className="w-full">
-        <ScrollArea className="w-full pb-2">
-            <TabsList className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-9 h-auto w-max">
+        <TabsList className="flex flex-wrap h-auto w-full justify-start">
             <TabsTrigger value="live"><CircleDotDashed />Live</TabsTrigger>
             <TabsTrigger value="game"><Gamepad2/>Game Control</TabsTrigger>
             <TabsTrigger value="history"><History />Bet History</TabsTrigger>
@@ -255,8 +256,7 @@ export default function AdminPanel({ adminUser }: AdminPanelProps) {
             <TabsTrigger value="leaderboard"><Trophy/>Leaderboard</TabsTrigger>
             <TabsTrigger value="payment"><CreditCard />Payment</TabsTrigger>
             <TabsTrigger value="api"><CloudCog/>API</TabsTrigger>
-            </TabsList>
-        </ScrollArea>
+        </TabsList>
         
 
         <TabsContent value="users" className="mt-6">
